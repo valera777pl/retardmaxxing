@@ -131,13 +131,13 @@ export function useGame() {
         console.log("[StartGame] Checking if account needs undelegation...");
         try {
           const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
-          undelegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+          undelegateTx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
           undelegateTx.feePayer = publicKey;
           const signedUndelegate = await signTransaction(undelegateTx);
-          await connection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
+          await magicRouterConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
           console.log("[StartGame] Undelegated previous session");
           // Wait for undelegation to propagate
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 3000));
         } catch (undelegateErr) {
           console.log("[StartGame] No undelegation needed or failed:", undelegateErr);
         }
