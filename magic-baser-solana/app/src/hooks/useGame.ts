@@ -138,15 +138,19 @@ export function useGame() {
         const sig = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(sig, "confirmed");
 
-        // STEP 2: Delegate GameSession to ER (L1)
-        console.log("[StartGame] Delegating GameSession to ER...");
-        const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, connection);
-        delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-        delegateTx.feePayer = publicKey;
-        const signedDelegate = await signTransaction(delegateTx);
-        const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize());
-        await connection.confirmTransaction(sigDelegate, "confirmed");
-        console.log("[StartGame] Delegation successful:", sigDelegate);
+        // STEP 2: Delegate GameSession to ER (L1) - optional, continue if fails
+        try {
+          console.log("[StartGame] Delegating GameSession to ER...");
+          const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, connection);
+          delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+          delegateTx.feePayer = publicKey;
+          const signedDelegate = await signTransaction(delegateTx);
+          const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize());
+          await connection.confirmTransaction(sigDelegate, "confirmed");
+          console.log("[StartGame] Delegation successful:", sigDelegate);
+        } catch (delegateErr) {
+          console.warn("[StartGame] Delegation failed (continuing without delegation):", delegateErr);
+        }
 
         // Reset local state for new game
         setLocalState({
