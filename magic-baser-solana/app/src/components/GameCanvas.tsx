@@ -33,12 +33,12 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
     }
   }, [isPlaying]);
 
-  // Start game on first render when isPlaying is true
+  // Start game when isPlaying becomes true
   useEffect(() => {
     if (isPlaying && engineRef.current) {
       engineRef.current.start();
     }
-  }, []);
+  }, [isPlaying]);
 
   return (
     <canvas
