@@ -371,6 +371,7 @@ export async function buildUndelegateSessionTx(
   const instruction = createUndelegateInstruction({
     payer: authority,
     delegatedAccount: sessionComponent,
+    componentPda: sessionComponent,
   });
 
   const tx = new Transaction().add(instruction);
