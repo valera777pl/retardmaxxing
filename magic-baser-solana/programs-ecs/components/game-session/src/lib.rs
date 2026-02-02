@@ -5,7 +5,7 @@ declare_id!("9zbUFw8u3XzzNRA3TDQsGG2AkEuu2AQBXFYPxAZuWhTo");
 /// GameSession component - delegated to Ephemeral Rollup (ER)
 /// Stores real-time game state with 10-50ms latency updates
 /// This account gets delegated to ER at game start, then committed back to L1
-#[component]
+#[component(delegate)]
 #[derive(Default)]
 pub struct GameSession {
     /// Reference to Player entity (owner of this session)
