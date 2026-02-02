@@ -127,6 +127,21 @@ export function useGame() {
       setError(null);
 
       try {
+        // STEP 0: Undelegate if previously delegated (cleanup from last session)
+        console.log("[StartGame] Checking if account needs undelegation...");
+        try {
+          const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
+          undelegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+          undelegateTx.feePayer = publicKey;
+          const signedUndelegate = await signTransaction(undelegateTx);
+          await connection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
+          console.log("[StartGame] Undelegated previous session");
+          // Wait for undelegation to propagate
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (undelegateErr) {
+          console.log("[StartGame] No undelegation needed or failed:", undelegateErr);
+        }
+
         // STEP 1: Start game (L1)
         const tx = await buildStartGameTx(worldPda, WORLD_ID, publicKey, characterId, connection);
         tx.recentBlockhash = (
