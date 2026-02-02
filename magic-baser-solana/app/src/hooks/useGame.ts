@@ -138,19 +138,15 @@ export function useGame() {
         const sig = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(sig, "confirmed");
 
-        // STEP 2: Delegate GameSession to ER (L1) - optional, continue if fails
-        try {
-          console.log("[StartGame] Delegating GameSession to ER...");
-          const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, connection);
-          delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-          delegateTx.feePayer = publicKey;
-          const signedDelegate = await signTransaction(delegateTx);
-          const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize());
-          await connection.confirmTransaction(sigDelegate, "confirmed");
-          console.log("[StartGame] Delegation successful:", sigDelegate);
-        } catch (delegateErr) {
-          console.warn("[StartGame] Delegation failed (continuing without delegation):", delegateErr);
-        }
+        // STEP 2: Delegate GameSession to ER (L1)
+        console.log("[StartGame] Delegating GameSession to ER...");
+        const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, connection);
+        delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        delegateTx.feePayer = publicKey;
+        const signedDelegate = await signTransaction(delegateTx);
+        const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize(), { skipPreflight: true });
+        await connection.confirmTransaction(sigDelegate, "confirmed");
+        console.log("[StartGame] Delegation successful:", sigDelegate);
 
         // Reset local state for new game
         setLocalState({
@@ -353,7 +349,7 @@ export function useGame() {
         const signedUndelegate = await signTransaction(undelegateTx);
         const sigUndelegate = await magicRouterConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
         console.log("[EndGame] Undelegate sent:", sigUndelegate);
-        // Wait a bit for undelegation to propagate
+        // Wait for undelegation to propagate
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (undelegateErr) {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);

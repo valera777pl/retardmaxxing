@@ -7,7 +7,7 @@ import {
   FindWorldPda,
   FindEntityPda,
   FindComponentPda,
-  DelegateComponent,
+  createDelegateInstruction,
   createUndelegateInstruction,
   anchor,
 } from "@magicblock-labs/bolt-sdk";
@@ -343,16 +343,20 @@ export async function buildDelegateSessionTx(
 ): Promise<Transaction> {
   const sessionSeed = getEntitySeed(authority, "session");
   const sessionEntity = FindEntityPda({ worldId, seed: sessionSeed });
-
-  setupAnchorProvider(connection);
-
-  const result = await DelegateComponent({
-    payer: authority,
-    entity: sessionEntity,
+  const sessionComponent = FindComponentPda({
     componentId: GAME_SESSION_COMPONENT_ID,
+    entity: sessionEntity,
   });
 
-  return result.transaction;
+  const delegateIx = createDelegateInstruction({
+    entity: sessionEntity,
+    account: sessionComponent,
+    ownerProgram: GAME_SESSION_COMPONENT_ID,
+    payer: authority,
+  });
+
+  const tx = new Transaction().add(delegateIx);
+  return tx;
 }
 
 // Undelegate GameSession back to L1
