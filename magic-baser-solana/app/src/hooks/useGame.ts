@@ -17,7 +17,6 @@ import {
 } from "@/solana/constants";
 import {
   solanaConnection,
-  magicRouterConnection,
   erConnection,
   findWorldPda,
   checkPlayerExists,
@@ -290,16 +289,16 @@ export function useGame() {
           level: localState.level,
           isDead: localState.isDead,
         },
-        magicRouterConnection
+        erConnection
       );
 
-      tx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
+      tx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
       tx.feePayer = sessionKp.publicKey;
 
       // Auto-sign with session keypair - NO WALLET POPUP!
       tx.sign(sessionKp);
 
-      await magicRouterConnection.sendRawTransaction(tx.serialize(), {
+      await erConnection.sendRawTransaction(tx.serialize(), {
         skipPreflight: true,
       });
     } catch (err) {
@@ -338,16 +337,16 @@ export function useGame() {
           level: state.level,
           isDead: state.isDead,
         },
-        magicRouterConnection
+        erConnection
       );
 
-      tx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
+      tx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
       tx.feePayer = sessionKp.publicKey;
 
       // Auto-sign with session keypair - NO WALLET POPUP!
       tx.sign(sessionKp);
 
-      const sig = await magicRouterConnection.sendRawTransaction(tx.serialize(), {
+      const sig = await erConnection.sendRawTransaction(tx.serialize(), {
         skipPreflight: true,
       });
 
@@ -435,12 +434,12 @@ export function useGame() {
       console.log("[EndGame] Undelegating GameSession from ER...");
       try {
         const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
-        undelegateTx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
+        undelegateTx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
         undelegateTx.feePayer = publicKey;
         const signedUndelegate = await signTransaction(undelegateTx);
-        const sigUndelegate = await magicRouterConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
+        const sigUndelegate = await erConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
         // Wait for confirmation before proceeding
-        await magicRouterConnection.confirmTransaction(sigUndelegate, "confirmed");
+        await erConnection.confirmTransaction(sigUndelegate, "confirmed");
         console.log("[EndGame] Undelegated:", sigUndelegate);
       } catch (undelegateErr) {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);
