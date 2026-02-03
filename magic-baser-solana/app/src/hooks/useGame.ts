@@ -8,12 +8,12 @@ import {
   LocalGameState,
   GameScreen,
   PlayerData,
-  GameSessionData,
 } from "@/types";
 import {
   GAME_SYNC_INTERVAL_MS,
   DEFAULT_CHARACTER,
   CharacterId,
+  WORLD_ID as WORLD_ID_NUMBER,
 } from "@/solana/constants";
 import {
   solanaConnection,
@@ -31,18 +31,22 @@ import {
   buildDelegateSessionTx,
   buildUndelegateSessionTx,
 } from "@/solana/systems";
+import { useGuest } from "@/contexts/GuestContext";
 
-// World ID created on devnet
-const WORLD_ID = new BN(2421);
+// World ID from constants (BN for SDK compatibility)
+const WORLD_ID = new BN(WORLD_ID_NUMBER);
 
 export function useGame() {
-  const { publicKey, signTransaction, connected } = useWallet();
+  const { publicKey: walletPublicKey, signTransaction, connected } = useWallet();
   const { connection } = useConnection();
+  const { isGuestMode, guestServerWallet, nickname: guestNickname } = useGuest();
+
+  // Effective public key: wallet or guest server wallet
+  const publicKey = isGuestMode ? guestServerWallet : walletPublicKey;
 
   // State
   const [screen, setScreen] = useState<GameScreen>("loading");
   const [playerData, setPlayerData] = useState<PlayerData | null>(null);
-  const [sessionData, setSessionData] = useState<GameSessionData | null>(null);
   const [localState, setLocalState] = useState<LocalGameState>({
     hp: 100,
     maxHp: 100,
@@ -81,6 +85,26 @@ export function useGame() {
   // Derived values
   const worldPda = findWorldPda({ worldId: WORLD_ID });
 
+  // Helper: sign and send via API (guest mode)
+  const signAndSendViaAPI = useCallback(async (tx: Transaction, isER = false): Promise<string> => {
+    const serializedTx = tx.serialize({
+      requireAllSignatures: false,
+      verifySignatures: false,
+    }).toString("base64");
+
+    const response = await fetch("/api/guest/sign-transaction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serializedTx, isER }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Transaction failed");
+    }
+    return data.signature;
+  }, []);
+
   // Check if player exists on-chain
   const playerExists = useCallback(async () => {
     if (!publicKey) return false;
@@ -90,7 +114,36 @@ export function useGame() {
   // Initialize player on-chain (or skip if already exists)
   const initializePlayer = useCallback(
     async (name: string) => {
-      if (!publicKey || !signTransaction) {
+      if (!publicKey) {
+        setError("No wallet available");
+        return false;
+      }
+
+      // Guest mode: use API
+      if (isGuestMode) {
+        setLoading(true);
+        setError(null);
+
+        try {
+          const tx = await buildInitPlayerTx(worldPda, WORLD_ID, publicKey, name, solanaConnection);
+
+          if (tx) {
+            await signAndSendViaAPI(tx, false);
+          }
+
+          setScreen("character-select");
+          return true;
+        } catch (err) {
+          console.error("Init player error:", err);
+          setError(err instanceof Error ? err.message : "Failed to initialize");
+          return false;
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      // Wallet mode: use signTransaction
+      if (!signTransaction) {
         setError("Wallet not connected");
         return false;
       }
@@ -102,7 +155,6 @@ export function useGame() {
         const tx = await buildInitPlayerTx(worldPda, WORLD_ID, publicKey, name, connection);
 
         if (tx) {
-          // Player doesn't exist, create it
           tx.recentBlockhash = (
             await connection.getLatestBlockhash()
           ).blockhash;
@@ -123,17 +175,17 @@ export function useGame() {
         setLoading(false);
       }
     },
-    [publicKey, signTransaction, worldPda, connection]
+    [publicKey, signTransaction, worldPda, connection, isGuestMode, signAndSendViaAPI]
   );
 
   // Start game - creates session on-chain and calls start_game system
   const startGame = useCallback(
     async (characterId: CharacterId) => {
       console.log("[StartGame] === STARTING GAME ===");
-      console.log("[StartGame] Character:", characterId, "PublicKey:", publicKey?.toBase58());
+      console.log("[StartGame] Character:", characterId, "PublicKey:", publicKey?.toBase58(), "GuestMode:", isGuestMode);
 
-      if (!publicKey || !signTransaction) {
-        setError("Wallet not connected");
+      if (!publicKey) {
+        setError("No wallet available");
         return false;
       }
 
@@ -142,7 +194,6 @@ export function useGame() {
 
       try {
         // Check if session is already delegated (from a previous unfinished game)
-        // Use solanaConnection directly for consistent L1 checks
         const isDelegated = await checkSessionDelegated(solanaConnection, WORLD_ID, publicKey);
         console.log("[StartGame] Session delegated status:", isDelegated);
 
@@ -150,44 +201,41 @@ export function useGame() {
           // STEP 0: Undelegate previous session first
           console.log("[StartGame] Session already delegated, undelegating first...");
           try {
-            // Get fresh blockhash with retry - use ER connection directly
-            let sigUndelegate: string | null = null;
             for (let retry = 0; retry < 3; retry++) {
               try {
-                // Create fresh transaction for each attempt
                 const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
                 const { blockhash, lastValidBlockHeight } = await erConnection.getLatestBlockhash();
                 console.log("[StartGame] Attempt", retry + 1, "- Got ER blockhash:", blockhash.slice(0, 16) + "...");
                 undelegateTx.recentBlockhash = blockhash;
                 undelegateTx.feePayer = publicKey;
 
-                const signedUndelegate = await signTransaction(undelegateTx);
-                sigUndelegate = await erConnection.sendRawTransaction(
-                  signedUndelegate.serialize(),
-                  { skipPreflight: true }
-                );
-
-                // Wait for confirmation with timeout
-                await erConnection.confirmTransaction(
-                  { signature: sigUndelegate, blockhash, lastValidBlockHeight },
-                  "confirmed"
-                );
-                console.log("[StartGame] Undelegated:", sigUndelegate);
-                break; // Success, exit retry loop
+                if (isGuestMode) {
+                  await signAndSendViaAPI(undelegateTx, true);
+                } else if (signTransaction) {
+                  const signedUndelegate = await signTransaction(undelegateTx);
+                  const sigUndelegate = await erConnection.sendRawTransaction(
+                    signedUndelegate.serialize(),
+                    { skipPreflight: true }
+                  );
+                  await erConnection.confirmTransaction(
+                    { signature: sigUndelegate, blockhash, lastValidBlockHeight },
+                    "confirmed"
+                  );
+                  console.log("[StartGame] Undelegated:", sigUndelegate);
+                }
+                break;
               } catch (retryErr) {
                 console.warn(`[StartGame] Undelegate attempt ${retry + 1} failed:`, retryErr);
                 if (retry === 2) throw retryErr;
-                await new Promise(r => setTimeout(r, 2000)); // Wait 2s before retry
+                await new Promise(r => setTimeout(r, 2000));
               }
             }
 
-            // Poll L1 until account is no longer delegated (max 30 seconds)
-            // Use solanaConnection directly to avoid wallet adapter caching
+            // Poll L1 until account is no longer delegated
             console.log("[StartGame] Waiting for undelegation to propagate to L1...");
             const maxAttempts = 30;
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
               await new Promise(resolve => setTimeout(resolve, 1000));
-              // Use solanaConnection (fresh L1 connection) instead of wallet's connection
               const stillDelegated = await checkSessionDelegated(solanaConnection, WORLD_ID, publicKey);
               console.log(`[StartGame] Poll attempt ${attempt}/${maxAttempts}: delegated=${stillDelegated}`);
               if (!stillDelegated) {
@@ -200,33 +248,39 @@ export function useGame() {
             }
           } catch (undelegateErr) {
             console.warn("[StartGame] Undelegate failed:", undelegateErr);
-            throw undelegateErr; // Don't continue if undelegation fails
+            throw undelegateErr;
           }
         }
 
-        // Continue with normal flow (same for both cases now)
         // STEP 1: Start game (L1)
         console.log("[StartGame] Starting new game on L1...");
-        const tx = await buildStartGameTx(worldPda, WORLD_ID, publicKey, characterId, connection);
-        tx.recentBlockhash = (
-          await connection.getLatestBlockhash()
-        ).blockhash;
-        tx.feePayer = publicKey;
+        const tx = await buildStartGameTx(worldPda, WORLD_ID, publicKey, characterId, solanaConnection);
 
-        const signed = await signTransaction(tx);
-        const sig = await connection.sendRawTransaction(signed.serialize());
-        await connection.confirmTransaction(sig, "confirmed");
-        console.log("[StartGame] Started game on L1:", sig);
+        if (isGuestMode) {
+          await signAndSendViaAPI(tx, false);
+        } else if (signTransaction) {
+          tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+          tx.feePayer = publicKey;
+          const signed = await signTransaction(tx);
+          const sig = await connection.sendRawTransaction(signed.serialize());
+          await connection.confirmTransaction(sig, "confirmed");
+          console.log("[StartGame] Started game on L1:", sig);
+        }
 
         // STEP 2: Delegate GameSession to ER (L1)
         console.log("[StartGame] Delegating GameSession to ER...");
-        const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, connection);
-        delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-        delegateTx.feePayer = publicKey;
-        const signedDelegate = await signTransaction(delegateTx);
-        const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize(), { skipPreflight: true });
-        await connection.confirmTransaction(sigDelegate, "confirmed");
-        console.log("[StartGame] Delegation successful:", sigDelegate);
+        const delegateTx = await buildDelegateSessionTx(worldPda, WORLD_ID, publicKey, solanaConnection);
+
+        if (isGuestMode) {
+          await signAndSendViaAPI(delegateTx, false);
+        } else if (signTransaction) {
+          delegateTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+          delegateTx.feePayer = publicKey;
+          const signedDelegate = await signTransaction(delegateTx);
+          const sigDelegate = await connection.sendRawTransaction(signedDelegate.serialize(), { skipPreflight: true });
+          await connection.confirmTransaction(sigDelegate, "confirmed");
+          console.log("[StartGame] Delegation successful:", sigDelegate);
+        }
 
         // Reset local state for new game
         setLocalState({
@@ -263,7 +317,7 @@ export function useGame() {
         setLoading(false);
       }
     },
-    [publicKey, signTransaction, worldPda, connection]
+    [publicKey, signTransaction, worldPda, connection, isGuestMode, signAndSendViaAPI]
   );
 
   // Sync local state to ER (gasless) - uses session keypair for auto-signing
@@ -273,12 +327,11 @@ export function useGame() {
     try {
       const sessionKp = sessionKeypairRef.current;
 
-      // Entity derived from user's wallet, signed by session keypair
       const tx = await buildUpdateStatsTx(
         worldPda,
         WORLD_ID,
-        publicKey,           // entityOwner - for PDA derivation
-        sessionKp.publicKey, // signer - session keypair
+        publicKey,
+        sessionKp.publicKey,
         {
           hp: localState.hp,
           xp: localState.xp,
@@ -295,7 +348,6 @@ export function useGame() {
       tx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
       tx.feePayer = sessionKp.publicKey;
 
-      // Auto-sign with session keypair - NO WALLET POPUP!
       tx.sign(sessionKp);
 
       await erConnection.sendRawTransaction(tx.serialize(), {
@@ -313,7 +365,6 @@ export function useGame() {
     const state = localStateRef.current;
     if (state.isPaused) return;
 
-    // Throttle to 100ms between transactions
     const now = Date.now();
     if (now - lastKillSyncRef.current < 100) return;
     lastKillSyncRef.current = now;
@@ -321,12 +372,11 @@ export function useGame() {
     try {
       const sessionKp = sessionKeypairRef.current;
 
-      // Entity derived from user's wallet, signed by session keypair
       const tx = await buildUpdateStatsTx(
         worldPda,
         WORLD_ID,
-        publicKey,           // entityOwner
-        sessionKp.publicKey, // signer
+        publicKey,
+        sessionKp.publicKey,
         {
           hp: state.hp,
           xp: state.xp,
@@ -343,7 +393,6 @@ export function useGame() {
       tx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
       tx.feePayer = sessionKp.publicKey;
 
-      // Auto-sign with session keypair - NO WALLET POPUP!
       tx.sign(sessionKp);
 
       const sig = await erConnection.sendRawTransaction(tx.serialize(), {
@@ -353,7 +402,6 @@ export function useGame() {
       console.log("[KillTx] Auto-signed:", sig);
       setTxCount(prev => prev + 1);
     } catch (err) {
-      // Silent fail - ER transactions are not critical
       console.warn("[KillTx] Failed:", err);
     }
   }, [publicKey, worldPda]);
@@ -377,8 +425,13 @@ export function useGame() {
     }
   }, []);
 
-  // Use revive (L1 transaction)
+  // Use revive (L1 transaction) - disabled in guest mode
   const useRevive = useCallback(async () => {
+    if (isGuestMode) {
+      setError("Revive not available in guest mode");
+      return false;
+    }
+
     if (!publicKey || !signTransaction) {
       setError("Wallet not connected");
       return false;
@@ -398,7 +451,6 @@ export function useGame() {
       const sig = await connection.sendRawTransaction(signed.serialize());
       await connection.confirmTransaction(sig, "confirmed");
 
-      // Update local state
       setLocalState((prev) => ({
         ...prev,
         isDead: false,
@@ -416,17 +468,17 @@ export function useGame() {
     } finally {
       setLoading(false);
     }
-  }, [publicKey, signTransaction, worldPda, connection, startSyncLoop]);
+  }, [publicKey, signTransaction, worldPda, connection, startSyncLoop, isGuestMode]);
 
   // End game - calls end_game system to mark session as inactive
   const endGame = useCallback(async () => {
-    if (!publicKey || !signTransaction) {
-      stopSyncLoop();
+    stopSyncLoop();
+
+    if (!publicKey) {
       setScreen("results");
       return true;
     }
 
-    stopSyncLoop();
     setLoading(true);
 
     try {
@@ -436,38 +488,43 @@ export function useGame() {
         const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
         undelegateTx.recentBlockhash = (await erConnection.getLatestBlockhash()).blockhash;
         undelegateTx.feePayer = publicKey;
-        const signedUndelegate = await signTransaction(undelegateTx);
-        const sigUndelegate = await erConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
-        // Wait for confirmation before proceeding
-        await erConnection.confirmTransaction(sigUndelegate, "confirmed");
-        console.log("[EndGame] Undelegated:", sigUndelegate);
+
+        if (isGuestMode) {
+          await signAndSendViaAPI(undelegateTx, true);
+        } else if (signTransaction) {
+          const signedUndelegate = await signTransaction(undelegateTx);
+          const sigUndelegate = await erConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
+          await erConnection.confirmTransaction(sigUndelegate, "confirmed");
+          console.log("[EndGame] Undelegated:", sigUndelegate);
+        }
       } catch (undelegateErr) {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);
       }
 
       // STEP 2: End game (L1)
-      const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, connection);
-      tx.recentBlockhash = (
-        await connection.getLatestBlockhash()
-      ).blockhash;
-      tx.feePayer = publicKey;
+      const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, solanaConnection);
 
-      const signed = await signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(sig, "confirmed");
-      console.log("[EndGame] End game confirmed:", sig);
+      if (isGuestMode) {
+        await signAndSendViaAPI(tx, false);
+      } else if (signTransaction) {
+        tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        tx.feePayer = publicKey;
+        const signed = await signTransaction(tx);
+        const sig = await connection.sendRawTransaction(signed.serialize());
+        await connection.confirmTransaction(sig, "confirmed");
+        console.log("[EndGame] End game confirmed:", sig);
+      }
 
       setScreen("results");
       return true;
     } catch (err) {
       console.error("End game error:", err);
-      // Still go to results even if transaction fails
       setScreen("results");
       return false;
     } finally {
       setLoading(false);
     }
-  }, [publicKey, signTransaction, worldPda, connection, stopSyncLoop]);
+  }, [publicKey, signTransaction, worldPda, connection, stopSyncLoop, isGuestMode, signAndSendViaAPI]);
 
   // Handle player death
   const onPlayerDeath = useCallback(() => {
@@ -482,7 +539,6 @@ export function useGame() {
       setLocalState((prev) => {
         const newState = { ...prev, ...updates };
 
-        // Check for death
         if (newState.hp <= 0 && !prev.isDead) {
           onPlayerDeath();
         }
@@ -493,9 +549,9 @@ export function useGame() {
     [onPlayerDeath]
   );
 
-  // Initialize on wallet connect
+  // Initialize on wallet connect or guest mode
   useEffect(() => {
-    if (connected && publicKey) {
+    if (isGuestMode && guestServerWallet) {
       playerExists().then((exists) => {
         if (exists) {
           setScreen("character-select");
@@ -503,10 +559,18 @@ export function useGame() {
           setScreen("menu");
         }
       });
-    } else {
+    } else if (connected && walletPublicKey) {
+      playerExists().then((exists) => {
+        if (exists) {
+          setScreen("character-select");
+        } else {
+          setScreen("menu");
+        }
+      });
+    } else if (!isGuestMode) {
       setScreen("menu");
     }
-  }, [connected, publicKey, playerExists]);
+  }, [connected, walletPublicKey, isGuestMode, guestServerWallet, playerExists]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -520,14 +584,15 @@ export function useGame() {
     screen,
     setScreen,
     playerData,
-    sessionData,
     localState,
     selectedCharacter,
     loading,
     error,
-    connected,
+    connected: connected || isGuestMode,
     publicKey,
     txCount,
+    isGuestMode,
+    guestNickname,
 
     // Actions
     initializePlayer,

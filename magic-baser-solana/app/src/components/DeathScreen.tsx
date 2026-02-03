@@ -8,6 +8,7 @@ interface Props {
   onRevive: () => void;
   onEndGame: () => void;
   loading: boolean;
+  isGuestMode?: boolean;
 }
 
 export function DeathScreen({
@@ -16,6 +17,7 @@ export function DeathScreen({
   onRevive,
   onEndGame,
   loading,
+  isGuestMode = false,
 }: Props) {
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
@@ -44,7 +46,9 @@ export function DeathScreen({
         </div>
 
         <div className="space-y-3">
-          {revivesAvailable > 0 ? (
+          {isGuestMode ? (
+            <div className="text-gray-500 py-2">Revive not available in guest mode</div>
+          ) : revivesAvailable > 0 ? (
             <button
               onClick={onRevive}
               disabled={loading}
@@ -81,9 +85,11 @@ export function DeathScreen({
           </button>
         </div>
 
-        <p className="text-xs text-gray-500 mt-4">
-          Revive costs ~0.00001 SOL (L1 transaction)
-        </p>
+        {!isGuestMode && (
+          <p className="text-xs text-gray-500 mt-4">
+            Revive costs ~0.00001 SOL (L1 transaction)
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,18 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useGame } from "@/hooks/useGame";
+import { useGuest } from "@/contexts/GuestContext";
 import { GameCanvas } from "@/components/GameCanvas";
 import { CharacterSelect } from "@/components/CharacterSelect";
 import { DeathScreen } from "@/components/DeathScreen";
 import { ResultsScreen } from "@/components/ResultsScreen";
 import { GameHUD } from "@/components/GameHUD";
+import { LoginChoice } from "@/components/LoginChoice";
 
 export default function Home() {
-  const { setVisible } = useWalletModal();
   const { publicKey, disconnect } = useWallet();
+  const { isGuestMode, nickname, exitGuestMode } = useGuest();
   const [playerName, setPlayerName] = useState("");
 
   const {
@@ -25,6 +26,7 @@ export default function Home() {
     connected,
     playerData,
     txCount,
+    guestNickname,
     initializePlayer,
     startGame,
     useRevive,
@@ -63,32 +65,42 @@ export default function Home() {
         </div>
 
         {!connected ? (
-          <button
-            onClick={() => setVisible(true)}
-            className="px-8 py-4 rounded-lg font-bold text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white transition-all shadow-lg shadow-purple-500/30"
-          >
-            Connect Wallet
-          </button>
+          <LoginChoice
+            onGuestStart={(name) => {
+              setPlayerName(name);
+            }}
+          />
         ) : (
           <div className="flex flex-col items-center gap-6 w-full max-w-md">
-            <div className="w-full bg-gray-800/50 rounded-xl p-6">
-              <p className="text-sm text-gray-400 mb-2">Connected:</p>
-              <p className="text-white font-mono text-sm truncate">
-                {publicKey?.toBase58()}
-              </p>
-            </div>
+            {isGuestMode ? (
+              <div className="w-full bg-green-900/30 border border-green-700 rounded-xl p-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-green-400 text-sm font-medium">Guest Mode</span>
+                </div>
+                <p className="text-white font-medium text-lg">{nickname}</p>
+              </div>
+            ) : (
+              <div className="w-full bg-gray-800/50 rounded-xl p-6">
+                <p className="text-sm text-gray-400 mb-2">Connected:</p>
+                <p className="text-white font-mono text-sm truncate">
+                  {publicKey?.toBase58()}
+                </p>
+              </div>
+            )}
 
-            <div className="w-full">
-              <label className="block text-gray-400 mb-2">Player Name</label>
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value.slice(0, 20))}
-                placeholder="Enter your name..."
-                maxLength={20}
-                className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:outline-none text-white"
-              />
-            </div>
+            {!isGuestMode && (
+              <div className="w-full">
+                <label className="block text-gray-400 mb-2">Player Name</label>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value.slice(0, 20))}
+                  placeholder="Enter your name..."
+                  maxLength={20}
+                  className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:outline-none text-white"
+                />
+              </div>
+            )}
 
             {error && (
               <div className="w-full p-4 rounded-lg bg-red-500/20 border border-red-500 text-red-400">
@@ -97,13 +109,15 @@ export default function Home() {
             )}
 
             <button
-              onClick={() => initializePlayer(playerName || "Anonymous")}
+              onClick={() => initializePlayer(isGuestMode ? nickname : (playerName || "Anonymous"))}
               disabled={loading}
               className={`
                 w-full px-8 py-4 rounded-lg font-bold text-lg transition-all
                 ${loading
                   ? "bg-gray-600 cursor-not-allowed"
-                  : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/30"
+                  : isGuestMode
+                    ? "bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg shadow-green-500/30"
+                    : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/30"
                 }
                 text-white
               `}
@@ -112,10 +126,16 @@ export default function Home() {
             </button>
 
             <button
-              onClick={() => disconnect()}
+              onClick={() => {
+                if (isGuestMode) {
+                  exitGuestMode();
+                } else {
+                  disconnect();
+                }
+              }}
               className="text-gray-500 hover:text-gray-400 transition-colors"
             >
-              Disconnect Wallet
+              {isGuestMode ? "Exit Guest Mode" : "Disconnect Wallet"}
             </button>
           </div>
         )}
@@ -132,6 +152,12 @@ export default function Home() {
   if (screen === "character-select") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
+        {isGuestMode && (
+          <div className="absolute top-4 right-4 bg-green-900/50 border border-green-700 rounded-lg px-4 py-2">
+            <span className="text-green-400 text-sm">Guest: {guestNickname}</span>
+          </div>
+        )}
+
         <CharacterSelect
           selectedCharacter={selectedCharacter}
           onSelect={setSelectedCharacter}
@@ -159,6 +185,12 @@ export default function Home() {
   if (screen === "playing") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
+        {isGuestMode && (
+          <div className="absolute top-4 right-4 bg-green-900/50 border border-green-700 rounded-lg px-4 py-2">
+            <span className="text-green-400 text-sm">Guest: {guestNickname}</span>
+          </div>
+        )}
+
         <GameHUD state={localState} txCount={txCount} />
 
         <GameCanvas
@@ -198,10 +230,11 @@ export default function Home() {
         </div>
         <DeathScreen
           state={localState}
-          revivesAvailable={playerData?.revives || 0}
+          revivesAvailable={isGuestMode ? 0 : (playerData?.revives || 0)}
           onRevive={useRevive}
           onEndGame={endGame}
           loading={loading}
+          isGuestMode={isGuestMode}
         />
       </div>
     );

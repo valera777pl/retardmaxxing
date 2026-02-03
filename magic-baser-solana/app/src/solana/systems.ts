@@ -16,11 +16,11 @@ import {
   UPDATE_STATS_SYSTEM_ID,
   USE_REVIVE_SYSTEM_ID,
   END_GAME_SYSTEM_ID,
-  SUBMIT_SCORE_SYSTEM_ID,
   PLAYER_COMPONENT_ID,
   GAME_SESSION_COMPONENT_ID,
   LEADERBOARD_COMPONENT_ID,
 } from "./constants";
+import { getEntitySeed } from "./client";
 
 // Dummy wallet for Anchor provider (we only need to build instructions, not sign)
 class DummyWallet {
@@ -47,12 +47,6 @@ function setupAnchorProvider(connection: Connection) {
     commitment: "confirmed",
   });
   anchor.setProvider(provider);
-}
-
-// Helper to derive entity seed from authority
-function getEntitySeed(authority: PublicKey, suffix: string): Uint8Array {
-  const seed = `${authority.toBase58().slice(0, 20)}-${suffix}`;
-  return new TextEncoder().encode(seed);
 }
 
 // Initialize player - creates entities and components if not exists
@@ -297,41 +291,6 @@ export async function buildEndGameTx(
       {
         entity: sessionEntity,
         components: [{ componentId: GAME_SESSION_COMPONENT_ID }],
-      },
-    ],
-  });
-
-  return result.transaction;
-}
-
-// Submit score
-export async function buildSubmitScoreTx(
-  worldPda: PublicKey,
-  worldId: BN,
-  authority: PublicKey,
-  connection: Connection
-): Promise<Transaction> {
-  const playerSeed = getEntitySeed(authority, "player");
-  const playerEntity = FindEntityPda({ worldId, seed: playerSeed });
-
-  const lbSeed = getEntitySeed(authority, "leaderboard");
-  const lbEntity = FindEntityPda({ worldId, seed: lbSeed });
-
-  // Setup Anchor provider for BOLT SDK
-  setupAnchorProvider(connection);
-
-  const result = await ApplySystem({
-    authority,
-    systemId: SUBMIT_SCORE_SYSTEM_ID,
-    world: worldPda,
-    entities: [
-      {
-        entity: playerEntity,
-        components: [{ componentId: PLAYER_COMPONENT_ID }],
-      },
-      {
-        entity: lbEntity,
-        components: [{ componentId: LEADERBOARD_COMPONENT_ID }],
       },
     ],
   });
