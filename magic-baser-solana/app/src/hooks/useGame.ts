@@ -87,6 +87,12 @@ export function useGame() {
 
   // Helper: sign and send via API (guest mode)
   const signAndSendViaAPI = useCallback(async (tx: Transaction, isER = false): Promise<string> => {
+    // Need to set a blockhash before serializing (API will replace with fresh one)
+    const conn = isER ? erConnection : solanaConnection;
+    const { blockhash } = await conn.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = guestServerWallet!;
+
     const serializedTx = tx.serialize({
       requireAllSignatures: false,
       verifySignatures: false,
@@ -103,7 +109,7 @@ export function useGame() {
       throw new Error(data.error || "Transaction failed");
     }
     return data.signature;
-  }, []);
+  }, [guestServerWallet]);
 
   // Check if player exists on-chain
   const playerExists = useCallback(async () => {
@@ -501,18 +507,17 @@ export function useGame() {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);
       }
 
-      // STEP 2: End game (L1)
-      const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, solanaConnection);
-
-      if (isGuestMode) {
-        await signAndSendViaAPI(tx, false);
-      } else if (signTransaction) {
+      // STEP 2: End game (L1) - skip for guest mode (account may still be delegated)
+      if (!isGuestMode && signTransaction) {
+        const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, solanaConnection);
         tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
         tx.feePayer = publicKey;
         const signed = await signTransaction(tx);
         const sig = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(sig, "confirmed");
         console.log("[EndGame] End game confirmed:", sig);
+      } else {
+        console.log("[EndGame] Skipping end_game for guest mode");
       }
 
       setScreen("results");
