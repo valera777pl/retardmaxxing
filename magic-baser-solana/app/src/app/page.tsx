@@ -59,10 +59,10 @@ export default function Home() {
           <h1 className="rpg-title text-3xl md:text-4xl mb-4">
             MAGIC BASER
           </h1>
-          <p className="rpg-subtitle text-[8px] md:text-[10px] mb-2">
+          <p className="rpg-subtitle text-[10px] md:text-[12px] mb-2">
             VAMPIRE SURVIVORS ON SOLANA
           </p>
-          <p className="text-[7px] text-[#4a3a2a]">
+          <p className="text-[9px] text-[#5a4a3a]">
             POWERED BY MAGICBLOCK EPHEMERAL ROLLUPS
           </p>
         </div>
@@ -141,8 +141,8 @@ export default function Home() {
 
         {/* Footer info */}
         <div className="mt-12 text-center">
-          <p className="text-[7px] text-[#4a3a2a]">10-50MS LATENCY VIA EPHEMERAL ROLLUPS</p>
-          <p className="text-[7px] text-[#4a3a2a]">GASLESS GAMEPLAY • PAY ONLY FOR REVIVES</p>
+          <p className="text-[10px] text-[#5a4a3a]">10-50MS LATENCY VIA EPHEMERAL ROLLUPS</p>
+          <p className="text-[10px] text-[#5a4a3a]">GASLESS GAMEPLAY • PAY ONLY FOR REVIVES</p>
         </div>
       </div>
     );

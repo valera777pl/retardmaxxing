@@ -47,18 +47,18 @@ export function GameHUD({ state, txCount = 0 }: Props) {
       </div>
 
       {/* HP and Level row */}
-      <div className="rpg-frame p-3">
+      <div className="rpg-frame p-4">
         <div className="flex items-center gap-4">
           {/* HP Bar */}
           <div className="flex-1">
-            <div className="flex justify-between text-[8px] text-[#8a7a6a] mb-1">
+            <div className="flex justify-between text-[10px] text-[#8a7a6a] mb-1">
               <span className="flex items-center">
                 <StatIcon src="/sprites/ui/icon_hp.png" alt="HP" />
                 HP
               </span>
-              <span className="text-[var(--gold)]">{state.hp} / {state.maxHp}</span>
+              <span className="text-[var(--gold)] text-[12px]">{state.hp} / {state.maxHp}</span>
             </div>
-            <div className="pixel-bar-container">
+            <div className="pixel-bar-container h-5">
               <div
                 className={`pixel-bar-fill ${hpBarClass}`}
                 style={{ width: `${hpPercent}%` }}
@@ -68,18 +68,18 @@ export function GameHUD({ state, txCount = 0 }: Props) {
 
           {/* Level */}
           <div className="text-center px-4 border-l-2 border-[var(--dungeon-border)]">
-            <div className="stat-label">LVL</div>
-            <div className="rpg-title text-lg">{state.level}</div>
+            <div className="stat-label text-[10px]">LVL</div>
+            <div className="rpg-title text-2xl">{state.level}</div>
           </div>
         </div>
 
         {/* XP Bar */}
         <div className="mt-3">
-          <div className="flex justify-between text-[8px] text-[#6a5a4a] mb-1">
+          <div className="flex justify-between text-[10px] text-[#6a5a4a] mb-1">
             <span>EXP</span>
-            <span>{state.xp} / {xpForNextLevel}</span>
+            <span className="text-[12px]">{state.xp} / {xpForNextLevel}</span>
           </div>
-          <div className="pixel-bar-container h-3">
+          <div className="pixel-bar-container h-4">
             <div
               className="pixel-bar-fill pixel-bar-xp"
               style={{ width: `${Math.min(xpPercent, 100)}%` }}
@@ -89,30 +89,30 @@ export function GameHUD({ state, txCount = 0 }: Props) {
       </div>
 
       {/* Stats row */}
-      <div className="rpg-frame p-2">
-        <div className="flex justify-between text-[8px]">
-          <div className="flex items-center gap-4">
+      <div className="rpg-frame p-3">
+        <div className="flex justify-between text-[11px]">
+          <div className="flex items-center gap-5">
             <span className="flex items-center">
               <StatIcon src="/sprites/ui/icon_gold.png" alt="Gold" />
-              <span className="text-[var(--gold)]">{state.gold}</span>
+              <span className="text-[var(--gold)] text-[13px]">{state.gold}</span>
             </span>
             <span className="flex items-center">
               <StatIcon src="/sprites/ui/icon_kills.png" alt="Kills" />
-              <span className="text-[var(--blood-light)]">{state.kills}</span>
+              <span className="text-[var(--blood-light)] text-[13px]">{state.kills}</span>
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-5">
             <span>
               <span className="text-[#6a5a4a]">TX</span>{" "}
-              <span className="text-[var(--mana-blue)]">{txCount}</span>
+              <span className="text-[var(--mana-blue)] text-[13px]">{txCount}</span>
             </span>
             <span className="flex items-center">
               <StatIcon src="/sprites/ui/icon_wave.png" alt="Wave" />
-              <span className="text-[var(--forest)]">{state.wave}</span>
+              <span className="text-[var(--forest)] text-[13px]">{state.wave}</span>
             </span>
             <span className="flex items-center">
               <StatIcon src="/sprites/ui/icon_time.png" alt="Time" />
-              <span className="text-[#9a8a7a]">{state.timeSurvived}s</span>
+              <span className="text-[#9a8a7a] text-[13px]">{state.timeSurvived}s</span>
             </span>
           </div>
         </div>

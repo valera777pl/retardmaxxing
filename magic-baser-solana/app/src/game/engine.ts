@@ -1135,64 +1135,80 @@ export class GameEngine {
   private renderLevelUpScreen() {
     const { ctx, state } = this;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
+    // Title
     ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 32px "Press Start 2P", monospace';
+    ctx.font = 'bold 36px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('LEVEL UP!', CANVAS_WIDTH / 2, 100);
+    ctx.fillText('LEVEL UP!', CANVAS_WIDTH / 2, 80);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = '16px "Press Start 2P", monospace';
-    ctx.fillText(`Level ${state.level}`, CANVAS_WIDTH / 2, 130);
+    ctx.font = '18px "Press Start 2P", monospace';
+    ctx.fillText(`Level ${state.level}`, CANVAS_WIDTH / 2, 115);
 
-    const choiceWidth = 200;
-    const choiceHeight = 150;
-    const startX = CANVAS_WIDTH / 2 - (state.levelUpChoices.length * choiceWidth + (state.levelUpChoices.length - 1) * 20) / 2;
+    // Choice boxes
+    const choiceWidth = 220;
+    const choiceHeight = 180;
+    const gap = 25;
+    const startX = CANVAS_WIDTH / 2 - (state.levelUpChoices.length * choiceWidth + (state.levelUpChoices.length - 1) * gap) / 2;
 
     state.levelUpChoices.forEach((choice, i) => {
-      const x = startX + i * (choiceWidth + 20);
-      const y = 180;
+      const x = startX + i * (choiceWidth + gap);
+      const y = 160;
 
+      // Box background
       ctx.fillStyle = '#2a2a4e';
       ctx.fillRect(x, y, choiceWidth, choiceHeight);
       ctx.strokeStyle = '#5dade2';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.strokeRect(x, y, choiceWidth, choiceHeight);
 
+      // Key hint
       ctx.fillStyle = '#ffd700';
-      ctx.font = 'bold 20px "Press Start 2P", monospace';
-      ctx.fillText(`[${i + 1}]`, x + choiceWidth / 2, y + 30);
+      ctx.font = 'bold 24px "Press Start 2P", monospace';
+      ctx.fillText(`[${i + 1}]`, x + choiceWidth / 2, y + 35);
 
       const weaponDef = choice.isUpgrade
         ? state.player.weapons.find(w => w.type === choice.weapon)
         : { name: choice.weapon.replace('_', ' ').toUpperCase(), level: 0 };
 
+      // Weapon name
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 12px "Press Start 2P", monospace';
-      ctx.fillText(
-        choice.isUpgrade ? `${weaponDef?.name || choice.weapon}` : choice.weapon.replace('_', ' '),
-        x + choiceWidth / 2,
-        y + 60
-      );
+      ctx.font = 'bold 14px "Press Start 2P", monospace';
+      const displayName = choice.isUpgrade
+        ? (weaponDef?.name || choice.weapon)
+        : choice.weapon.replace('_', ' ');
+      ctx.fillText(displayName, x + choiceWidth / 2, y + 75);
 
+      // Level or NEW indicator
       ctx.fillStyle = choice.isUpgrade ? '#00ff88' : '#ff6347';
-      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.font = '12px "Press Start 2P", monospace';
       ctx.fillText(
         choice.isUpgrade ? `Lv.${(weaponDef?.level || 0) + 1}` : 'NEW!',
         x + choiceWidth / 2,
-        y + 85
+        y + 105
       );
 
-      ctx.fillStyle = '#aaaaaa';
-      ctx.font = '8px "Press Start 2P", monospace';
+      // Description
+      ctx.fillStyle = '#cccccc';
+      ctx.font = '10px "Press Start 2P", monospace';
       if (choice.isUpgrade && weaponDef) {
         const nextLevel = (weaponDef.level || 0) + 1;
         const upgrade = WEAPON_UPGRADES[choice.weapon][nextLevel - 1];
-        ctx.fillText(upgrade?.description || '', x + choiceWidth / 2, y + 110);
+        if (upgrade?.description) {
+          ctx.fillText(upgrade.description, x + choiceWidth / 2, y + 140);
+        }
+      } else {
+        ctx.fillText('Press to add', x + choiceWidth / 2, y + 140);
       }
     });
+
+    // Instructions
+    ctx.fillStyle = '#888888';
+    ctx.font = '12px "Press Start 2P", monospace';
+    ctx.fillText('Press 1, 2, or 3 to choose', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 50);
 
     ctx.textAlign = 'left';
   }
