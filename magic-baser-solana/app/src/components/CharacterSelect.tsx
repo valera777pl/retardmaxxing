@@ -129,12 +129,12 @@ export function CharacterSelect({
               {/* Passive ability */}
               <div className="mt-2 pt-2 border-t border-[var(--dungeon-border)]">
                 <div
-                  className="text-[7px] font-bold"
+                  className="text-[10px] font-bold"
                   style={{ color: char.passive.color }}
                 >
                   {char.passive.name}
                 </div>
-                <p className="text-[6px] text-[#6a5a4a] mt-1">{char.passive.description}</p>
+                <p className="text-[8px] text-[#8a7a6a] mt-1">{char.passive.description}</p>
               </div>
 
               {/* Locked overlay */}
@@ -200,14 +200,14 @@ export function CharacterSelect({
             </div>
 
             {/* Passive ability in modal */}
-            <div className="rpg-frame p-2 mb-4">
+            <div className="rpg-frame p-3 mb-4">
               <div
-                className="text-[9px] font-bold text-center"
+                className="text-[12px] font-bold text-center"
                 style={{ color: pendingChar.passive.color }}
               >
                 {pendingChar.passive.name}
               </div>
-              <p className="text-[7px] text-[#8a7a6a] text-center mt-1">
+              <p className="text-[10px] text-[#8a7a6a] text-center mt-1">
                 {pendingChar.passive.description}
               </p>
             </div>
