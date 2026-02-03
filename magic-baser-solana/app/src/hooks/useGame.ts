@@ -70,6 +70,7 @@ export function useGame() {
   const lastKillSyncRef = useRef<number>(0);
   const localStateRef = useRef<LocalGameState>(localState);
 
+
   // Keep localStateRef in sync with localState (for use in callbacks without causing re-renders)
   useEffect(() => {
     localStateRef.current = localState;
@@ -290,32 +291,25 @@ export function useGame() {
     }
   }, [publicKey, signTransaction, worldPda, localState]);
 
-  // Instant sync on kill (with throttle) - demonstrates MagicBlock speed
-  // Uses localStateRef to avoid callback changing on every state update
+  // Sync stats to ER periodically (not on every kill to avoid wallet popup spam)
+  // TODO: Implement proper session keys for auto-signing
+  // See: https://docs.magicblock.gg/pages/tools/session-keys/
   const syncKillToER = useCallback(async () => {
-    // 1. First check wallet connection
-    if (!publicKey || !signTransaction) {
-      console.log("[KillTx] Wallet not connected");
-      return;
-    }
+    // Currently disabled - wallet popup on every kill is bad UX
+    // Enable after implementing session keys in BOLT systems
+    return;
+
+    /* Session keys require on-chain program changes:
+    if (!publicKey || !signTransaction) return;
 
     const state = localStateRef.current;
-    if (state.isPaused) {
-      console.log("[KillTx] Game paused, skipping");
-      return;
-    }
+    if (state.isPaused) return;
 
-    // 2. Throttle AFTER wallet check (fixes stale timestamp if wallet disconnects)
     const now = Date.now();
-    if (now - lastKillSyncRef.current < 100) {
-      console.log("[KillTx] Throttled");
-      return;
-    }
+    if (now - lastKillSyncRef.current < 5000) return; // 5 second throttle
     lastKillSyncRef.current = now;
 
     try {
-      console.log("[KillTx] Building transaction...", { kills: state.kills });
-
       const tx = await buildUpdateStatsTx(worldPda, WORLD_ID, publicKey, {
         hp: state.hp,
         xp: state.xp,
@@ -327,26 +321,17 @@ export function useGame() {
         isDead: state.isDead,
       }, magicRouterConnection);
 
-      console.log("[KillTx] Getting blockhash...");
-      tx.recentBlockhash = (
-        await magicRouterConnection.getLatestBlockhash()
-      ).blockhash;
+      tx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
       tx.feePayer = publicKey;
-
-      console.log("[KillTx] Signing...");
       const signed = await signTransaction(tx);
-
-      console.log("[KillTx] Sending to MagicBlock ER...");
-      const sig = await magicRouterConnection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: true,
-      });
-
-      console.log("[KillTx] SUCCESS! Signature:", sig);
+      const sig = await magicRouterConnection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      console.log("[Sync] Stats synced:", sig);
       setTxCount(prev => prev + 1);
     } catch (err) {
-      console.error("[KillTx] FAILED:", err);
+      console.warn("[Sync] Failed:", err);
     }
-  }, [publicKey, signTransaction, worldPda]); // localState removed - using ref instead!
+    */
+  }, [publicKey, worldPda]);
 
   // Start sync loop
   const startSyncLoop = useCallback(() => {
