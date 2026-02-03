@@ -966,36 +966,56 @@ export class GameEngine {
       const sprite = loader.get(spritePath);
       const size = enemy.size;
 
-      // Hit flash effect - draw white overlay
-      if (enemy.hitFlash > 0) {
-        ctx.globalAlpha = 0.7;
-      }
-
       if (sprite) {
         // Draw enemy sprite scaled to their size
         const drawSize = Math.max(size, 32);
-        ctx.drawImage(
-          sprite,
-          screenX - drawSize / 2,
-          screenY - drawSize / 2,
-          drawSize,
-          drawSize
-        );
 
-        // White overlay for hit flash
+        // Bobbing animation based on enemy id for variety
+        const bobSpeed = enemy.type === 'fast' ? 15 : enemy.type === 'boss' ? 6 : 10;
+        const bobAmount = enemy.type === 'boss' ? 3 : 2;
+        const bobOffset = Math.sin(state.gameTime * bobSpeed + enemy.id) * bobAmount;
+
+        // Face player direction
+        const facingLeft = enemy.vel.x < 0;
+
+        ctx.save();
+
+        // Hit flash effect - draw sprite brighter
         if (enemy.hitFlash > 0) {
-          ctx.globalCompositeOperation = 'source-atop';
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(screenX - drawSize / 2, screenY - drawSize / 2, drawSize, drawSize);
-          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 0.6;
+          ctx.filter = 'brightness(3)';
+          if (facingLeft) {
+            ctx.translate(screenX, screenY + bobOffset);
+            ctx.scale(-1, 1);
+            ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+          } else {
+            ctx.drawImage(sprite, screenX - drawSize / 2, screenY - drawSize / 2 + bobOffset, drawSize, drawSize);
+          }
+          ctx.filter = 'none';
+          ctx.globalAlpha = 1;
         }
+
+        // Draw main sprite
+        if (facingLeft) {
+          ctx.translate(screenX, screenY + bobOffset);
+          ctx.scale(-1, 1);
+          ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+        } else {
+          ctx.drawImage(sprite, screenX - drawSize / 2, screenY - drawSize / 2 + bobOffset, drawSize, drawSize);
+        }
+
+        ctx.restore();
       } else {
         // Fallback: colored circle
-        switch (enemy.type) {
-          case 'basic': ctx.fillStyle = '#e74c3c'; break;
-          case 'fast': ctx.fillStyle = '#9b59b6'; break;
-          case 'tank': ctx.fillStyle = '#566573'; break;
-          case 'boss': ctx.fillStyle = '#f1c40f'; break;
+        if (enemy.hitFlash > 0) {
+          ctx.fillStyle = '#ffffff';
+        } else {
+          switch (enemy.type) {
+            case 'basic': ctx.fillStyle = '#e74c3c'; break;
+            case 'fast': ctx.fillStyle = '#9b59b6'; break;
+            case 'tank': ctx.fillStyle = '#566573'; break;
+            case 'boss': ctx.fillStyle = '#f1c40f'; break;
+          }
         }
 
         ctx.beginPath();
@@ -1007,8 +1027,6 @@ export class GameEngine {
         ctx.fillRect(screenX - 6, screenY - 4, 3, 3);
         ctx.fillRect(screenX + 3, screenY - 4, 3, 3);
       }
-
-      ctx.globalAlpha = 1;
 
       // Health bar
       const hpPercent = enemy.hp / enemy.maxHp;
@@ -1098,13 +1116,27 @@ export class GameEngine {
     if (sprite) {
       // Draw character sprite (scaled up from 32x32 to 48x48 for visibility)
       const drawSize = 48;
-      ctx.drawImage(
-        sprite,
-        screenX - drawSize / 2,
-        screenY - drawSize / 2,
-        drawSize,
-        drawSize
-      );
+
+      // Bobbing animation when moving
+      const isMoving = player.vel.x !== 0 || player.vel.y !== 0;
+      const bobOffset = isMoving ? Math.sin(state.gameTime * 12) * 2 : 0;
+
+      // Flip sprite based on movement direction
+      ctx.save();
+      if (player.lastDir.x < 0) {
+        ctx.translate(screenX, screenY + bobOffset);
+        ctx.scale(-1, 1);
+        ctx.drawImage(sprite, -drawSize / 2, -drawSize / 2, drawSize, drawSize);
+      } else {
+        ctx.drawImage(
+          sprite,
+          screenX - drawSize / 2,
+          screenY - drawSize / 2 + bobOffset,
+          drawSize,
+          drawSize
+        );
+      }
+      ctx.restore();
     } else {
       // Fallback: blue wizard circle
       ctx.fillStyle = '#0f3460';
