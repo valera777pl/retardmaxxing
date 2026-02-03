@@ -18,8 +18,10 @@ import {
 import {
   solanaConnection,
   magicRouterConnection,
+  erConnection,
   findWorldPda,
   checkPlayerExists,
+  checkSessionDelegated,
 } from "@/solana/client";
 import {
   buildInitPlayerTx,
@@ -66,6 +68,12 @@ export function useGame() {
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const gameStartTimeRef = useRef<number>(0);
   const lastKillSyncRef = useRef<number>(0);
+  const localStateRef = useRef<LocalGameState>(localState);
+
+  // Keep localStateRef in sync with localState (for use in callbacks without causing re-renders)
+  useEffect(() => {
+    localStateRef.current = localState;
+  }, [localState]);
 
   // Derived values
   const worldPda = findWorldPda({ worldId: WORLD_ID });
@@ -118,6 +126,9 @@ export function useGame() {
   // Start game - creates session on-chain and calls start_game system
   const startGame = useCallback(
     async (characterId: CharacterId) => {
+      console.log("[StartGame] === STARTING GAME ===");
+      console.log("[StartGame] Character:", characterId, "PublicKey:", publicKey?.toBase58());
+
       if (!publicKey || !signTransaction) {
         setError("Wallet not connected");
         return false;
@@ -127,22 +138,72 @@ export function useGame() {
       setError(null);
 
       try {
-        // STEP 0: Undelegate if previously delegated (cleanup from last session)
-        console.log("[StartGame] Checking if account needs undelegation...");
-        try {
-          const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
-          undelegateTx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
-          undelegateTx.feePayer = publicKey;
-          const signedUndelegate = await signTransaction(undelegateTx);
-          await magicRouterConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
-          console.log("[StartGame] Undelegated previous session");
-          // Wait for undelegation to propagate
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } catch (undelegateErr) {
-          console.log("[StartGame] No undelegation needed or failed:", undelegateErr);
+        // Check if session is already delegated (from a previous unfinished game)
+        // Use solanaConnection directly for consistent L1 checks
+        const isDelegated = await checkSessionDelegated(solanaConnection, WORLD_ID, publicKey);
+        console.log("[StartGame] Session delegated status:", isDelegated);
+
+        if (isDelegated) {
+          // STEP 0: Undelegate previous session first
+          console.log("[StartGame] Session already delegated, undelegating first...");
+          try {
+            // Get fresh blockhash with retry - use ER connection directly
+            let sigUndelegate: string | null = null;
+            for (let retry = 0; retry < 3; retry++) {
+              try {
+                // Create fresh transaction for each attempt
+                const undelegateTx = await buildUndelegateSessionTx(worldPda, WORLD_ID, publicKey);
+                const { blockhash, lastValidBlockHeight } = await erConnection.getLatestBlockhash();
+                console.log("[StartGame] Attempt", retry + 1, "- Got ER blockhash:", blockhash.slice(0, 16) + "...");
+                undelegateTx.recentBlockhash = blockhash;
+                undelegateTx.feePayer = publicKey;
+
+                const signedUndelegate = await signTransaction(undelegateTx);
+                sigUndelegate = await erConnection.sendRawTransaction(
+                  signedUndelegate.serialize(),
+                  { skipPreflight: true }
+                );
+
+                // Wait for confirmation with timeout
+                await erConnection.confirmTransaction(
+                  { signature: sigUndelegate, blockhash, lastValidBlockHeight },
+                  "confirmed"
+                );
+                console.log("[StartGame] Undelegated:", sigUndelegate);
+                break; // Success, exit retry loop
+              } catch (retryErr) {
+                console.warn(`[StartGame] Undelegate attempt ${retry + 1} failed:`, retryErr);
+                if (retry === 2) throw retryErr;
+                await new Promise(r => setTimeout(r, 2000)); // Wait 2s before retry
+              }
+            }
+
+            // Poll L1 until account is no longer delegated (max 30 seconds)
+            // Use solanaConnection directly to avoid wallet adapter caching
+            console.log("[StartGame] Waiting for undelegation to propagate to L1...");
+            const maxAttempts = 30;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              // Use solanaConnection (fresh L1 connection) instead of wallet's connection
+              const stillDelegated = await checkSessionDelegated(solanaConnection, WORLD_ID, publicKey);
+              console.log(`[StartGame] Poll attempt ${attempt}/${maxAttempts}: delegated=${stillDelegated}`);
+              if (!stillDelegated) {
+                console.log("[StartGame] Undelegation propagated to L1!");
+                break;
+              }
+              if (attempt === maxAttempts) {
+                throw new Error("Undelegation did not propagate to L1 within 30 seconds");
+              }
+            }
+          } catch (undelegateErr) {
+            console.warn("[StartGame] Undelegate failed:", undelegateErr);
+            throw undelegateErr; // Don't continue if undelegation fails
+          }
         }
 
+        // Continue with normal flow (same for both cases now)
         // STEP 1: Start game (L1)
+        console.log("[StartGame] Starting new game on L1...");
         const tx = await buildStartGameTx(worldPda, WORLD_ID, publicKey, characterId, connection);
         tx.recentBlockhash = (
           await connection.getLatestBlockhash()
@@ -152,6 +213,7 @@ export function useGame() {
         const signed = await signTransaction(tx);
         const sig = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(sig, "confirmed");
+        console.log("[StartGame] Started game on L1:", sig);
 
         // STEP 2: Delegate GameSession to ER (L1)
         console.log("[StartGame] Delegating GameSession to ER...");
@@ -229,13 +291,16 @@ export function useGame() {
   }, [publicKey, signTransaction, worldPda, localState]);
 
   // Instant sync on kill (with throttle) - demonstrates MagicBlock speed
+  // Uses localStateRef to avoid callback changing on every state update
   const syncKillToER = useCallback(async () => {
     // 1. First check wallet connection
     if (!publicKey || !signTransaction) {
       console.log("[KillTx] Wallet not connected");
       return;
     }
-    if (localState.isPaused) {
+
+    const state = localStateRef.current;
+    if (state.isPaused) {
       console.log("[KillTx] Game paused, skipping");
       return;
     }
@@ -249,17 +314,17 @@ export function useGame() {
     lastKillSyncRef.current = now;
 
     try {
-      console.log("[KillTx] Building transaction...", { kills: localState.kills });
+      console.log("[KillTx] Building transaction...", { kills: state.kills });
 
       const tx = await buildUpdateStatsTx(worldPda, WORLD_ID, publicKey, {
-        hp: localState.hp,
-        xp: localState.xp,
-        goldEarned: localState.gold,
-        timeSurvived: localState.timeSurvived,
-        wave: localState.wave,
-        kills: localState.kills,
-        level: localState.level,
-        isDead: localState.isDead,
+        hp: state.hp,
+        xp: state.xp,
+        goldEarned: state.gold,
+        timeSurvived: state.timeSurvived,
+        wave: state.wave,
+        kills: state.kills,
+        level: state.level,
+        isDead: state.isDead,
       }, magicRouterConnection);
 
       console.log("[KillTx] Getting blockhash...");
@@ -281,7 +346,7 @@ export function useGame() {
     } catch (err) {
       console.error("[KillTx] FAILED:", err);
     }
-  }, [publicKey, signTransaction, worldPda, localState]); // Removed txCount from deps!
+  }, [publicKey, signTransaction, worldPda]); // localState removed - using ref instead!
 
   // Start sync loop
   const startSyncLoop = useCallback(() => {
@@ -363,9 +428,9 @@ export function useGame() {
         undelegateTx.feePayer = publicKey;
         const signedUndelegate = await signTransaction(undelegateTx);
         const sigUndelegate = await magicRouterConnection.sendRawTransaction(signedUndelegate.serialize(), { skipPreflight: true });
-        console.log("[EndGame] Undelegate sent:", sigUndelegate);
-        // Wait for undelegation to propagate
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for confirmation before proceeding
+        await magicRouterConnection.confirmTransaction(sigUndelegate, "confirmed");
+        console.log("[EndGame] Undelegated:", sigUndelegate);
       } catch (undelegateErr) {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);
       }

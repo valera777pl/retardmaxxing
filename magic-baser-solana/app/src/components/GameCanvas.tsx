@@ -14,29 +14,44 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
+  // Use refs for callbacks to avoid recreating engine when they change
+  const onStateUpdateRef = useRef(onStateUpdate);
+  const onKillRef = useRef(onKill);
+
+  // Keep refs in sync
+  useEffect(() => {
+    onStateUpdateRef.current = onStateUpdate;
+  }, [onStateUpdate]);
+
+  useEffect(() => {
+    onKillRef.current = onKill;
+  }, [onKill]);
+
+  // Create engine ONCE on mount
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    // Initialize engine with onKill callback for instant transaction on enemy death
-    engineRef.current = new GameEngine(canvasRef.current, onStateUpdate, onKill);
+    // Initialize engine with wrapper callbacks that use refs
+    engineRef.current = new GameEngine(
+      canvasRef.current,
+      (state) => onStateUpdateRef.current(state),
+      () => onKillRef.current?.()
+    );
 
     return () => {
       engineRef.current?.stop();
+      engineRef.current = null;
     };
-  }, [onStateUpdate, onKill]);
+  }, []); // Empty deps - only run on mount!
 
+  // Handle play/pause
   useEffect(() => {
+    if (!engineRef.current) return;
+
     if (isPlaying) {
-      engineRef.current?.resume();
-    } else {
-      engineRef.current?.stop();
-    }
-  }, [isPlaying]);
-
-  // Start game when isPlaying becomes true
-  useEffect(() => {
-    if (isPlaying && engineRef.current) {
       engineRef.current.start();
+    } else {
+      engineRef.current.stop();
     }
   }, [isPlaying]);
 

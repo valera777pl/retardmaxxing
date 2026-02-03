@@ -47,6 +47,9 @@ export const DEFAULT_ER_VALIDATOR = ER_VALIDATORS.us;
 // World program (BOLT ECS)
 export const WORLD_PROGRAM_ID = new PublicKey("WorLD15A7CrDwLcLy4fRqtaTb9fbd8o8iqiEMUDse2n");
 
+// Delegation Program (MagicBlock)
+export const DELEGATION_PROGRAM_ID = new PublicKey("DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh");
+
 // World ID for current network
 const WORLD_IDS: Record<NetworkType, number> = {
   mainnet: 1,  // TODO: Update after mainnet World creation
