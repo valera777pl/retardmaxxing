@@ -7,6 +7,7 @@ import Image from "next/image";
 interface Props {
   state: LocalGameState;
   txCount?: number;
+  onResume?: () => void;
 }
 
 // Stat icon component
@@ -23,7 +24,7 @@ function StatIcon({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-export function GameHUD({ state, txCount = 0 }: Props) {
+export function GameHUD({ state, txCount = 0, onResume }: Props) {
   const { totalCoins } = useCoins();
   const hpPercent = (state.hp / state.maxHp) * 100;
   const xpForNextLevel = state.level * 100;
@@ -120,11 +121,24 @@ export function GameHUD({ state, txCount = 0 }: Props) {
 
       {/* Paused overlay */}
       {state.isPaused && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/70 z-40">
-          <div className="rpg-frame rpg-frame-corners p-8">
-            <div className="rpg-title text-2xl torch-glow">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/70 z-40 cursor-pointer"
+          onClick={onResume}
+        >
+          <div className="rpg-frame rpg-frame-corners p-8 text-center">
+            <div className="rpg-title text-2xl torch-glow mb-4">
               PAUSED
             </div>
+            <p className="text-[12px] text-[#8a7a6a] mb-4">CLICK ANYWHERE TO RESUME</p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onResume?.();
+              }}
+              className="pixel-btn pixel-btn-primary"
+            >
+              RESUME
+            </button>
           </div>
         </div>
       )}

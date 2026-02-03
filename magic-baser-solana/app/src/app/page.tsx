@@ -271,7 +271,11 @@ export default function Home() {
           </div>
         )}
 
-        <GameHUD state={localState} txCount={txCount} />
+        <GameHUD
+          state={localState}
+          txCount={txCount}
+          onResume={() => updateLocalState({ isPaused: false })}
+        />
 
         <div className="rpg-frame p-1">
           <GameCanvas
