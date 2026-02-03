@@ -21,7 +21,6 @@ import {
   findWorldPda,
   checkPlayerExists,
   checkSessionDelegated,
-  fetchPlayerData,
 } from "@/solana/client";
 import {
   buildInitPlayerTx,
@@ -48,6 +47,7 @@ export function useGame() {
   // State
   const [screen, setScreen] = useState<GameScreen>("loading");
   const [playerData, setPlayerData] = useState<PlayerData | null>(null);
+  const [playerName, setPlayerName] = useState<string>("");
   const [localState, setLocalState] = useState<LocalGameState>({
     hp: 100,
     maxHp: 100,
@@ -112,6 +112,23 @@ export function useGame() {
     return data.signature;
   }, [guestServerWallet]);
 
+  // LocalStorage helpers for player name
+  const getStoredName = useCallback((key: string): string | null => {
+    try {
+      return localStorage.getItem(`player-name-${key}`);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const setStoredName = useCallback((key: string, name: string) => {
+    try {
+      localStorage.setItem(`player-name-${key}`, name);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   // Check if player exists on-chain
   const playerExists = useCallback(async () => {
     if (!publicKey) return false;
@@ -137,6 +154,10 @@ export function useGame() {
           if (tx) {
             await signAndSendViaAPI(tx, false);
           }
+
+          // Save name to localStorage
+          setStoredName(publicKey.toBase58(), name);
+          setPlayerName(name);
 
           setScreen("character-select");
           return true;
@@ -171,6 +192,10 @@ export function useGame() {
           const sig = await connection.sendRawTransaction(signed.serialize());
           await connection.confirmTransaction(sig, "confirmed");
         }
+
+        // Save name to localStorage
+        setStoredName(publicKey.toBase58(), name);
+        setPlayerName(name);
 
         setScreen("character-select");
         return true;
@@ -560,10 +585,10 @@ export function useGame() {
     const checkAndLoadPlayer = async (pk: PublicKey) => {
       const exists = await checkPlayerExists(connection, WORLD_ID, pk);
       if (exists) {
-        // Load player data to get the name
-        const data = await fetchPlayerData(connection, WORLD_ID, pk);
-        if (data) {
-          setPlayerData({ name: data.name } as any);
+        // Load name from localStorage
+        const storedName = getStoredName(pk.toBase58());
+        if (storedName) {
+          setPlayerName(storedName);
         }
         setScreen("welcome-back");
       } else {
@@ -578,7 +603,7 @@ export function useGame() {
     } else if (!isGuestMode) {
       setScreen("menu");
     }
-  }, [connected, walletPublicKey, isGuestMode, guestServerWallet, connection]);
+  }, [connected, walletPublicKey, isGuestMode, guestServerWallet, connection, getStoredName]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -601,6 +626,7 @@ export function useGame() {
     txCount,
     isGuestMode,
     guestNickname,
+    playerName,
 
     // Actions
     initializePlayer,

@@ -12,6 +12,7 @@ import {
   anchor,
 } from "@magicblock-labs/bolt-sdk";
 import {
+  INIT_PLAYER_SYSTEM_ID,
   START_GAME_SYSTEM_ID,
   UPDATE_STATS_SYSTEM_ID,
   USE_REVIVE_SYSTEM_ID,
@@ -112,6 +113,30 @@ export async function buildInitPlayerTx(
     componentId: LEADERBOARD_COMPONENT_ID,
   });
   tx.add(lbCompResult.instruction);
+
+  // Setup Anchor provider for BOLT SDK
+  setupAnchorProvider(connection);
+
+  // Call init_player system to set the name and initialize player data
+  const initPlayerResult = await ApplySystem({
+    authority,
+    systemId: INIT_PLAYER_SYSTEM_ID,
+    world: worldPda,
+    entities: [
+      {
+        entity: playerEntityResult.entityPda,
+        components: [{ componentId: PLAYER_COMPONENT_ID }],
+      },
+      {
+        entity: lbEntityResult.entityPda,
+        components: [{ componentId: LEADERBOARD_COMPONENT_ID }],
+      },
+    ],
+    args: {
+      name: name,
+    },
+  });
+  tx.add(initPlayerResult.instruction);
 
   return tx;
 }

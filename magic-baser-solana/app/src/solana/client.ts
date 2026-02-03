@@ -75,21 +75,37 @@ export async function fetchPlayerData(
   try {
     const data = info.data;
 
-    // Try to find the name by looking for string length + printable ASCII
-    // BOLT component structure varies, so we search for valid string pattern
+    // BOLT component layout:
+    // - 8 bytes discriminator
+    // - Option<Pubkey> authority = 1 byte tag + 32 bytes = 33 bytes
+    // - String name = 4 bytes length + data
+    // Total offset to name: 8 + 33 = 41
+
+    const NAME_OFFSET = 41;
+
+    if (data.length > NAME_OFFSET + 4) {
+      const nameLen = data.readUInt32LE(NAME_OFFSET);
+      if (nameLen > 0 && nameLen <= 50 && NAME_OFFSET + 4 + nameLen <= data.length) {
+        const name = data.slice(NAME_OFFSET + 4, NAME_OFFSET + 4 + nameLen).toString("utf8");
+        console.log("[FetchPlayer] Found name:", name);
+        return { name };
+      }
+    }
+
+    // Fallback: scan for valid string (in case layout is different)
     for (let offset = 0; offset < Math.min(100, data.length - 4); offset++) {
       const len = data.readUInt32LE(offset);
-      if (len > 0 && len < 50 && offset + 4 + len <= data.length) {
+      if (len > 0 && len < 30 && offset + 4 + len <= data.length) {
         const str = data.slice(offset + 4, offset + 4 + len).toString("utf8");
-        // Check if it's a valid printable string (not binary garbage)
-        if (/^[\x20-\x7E]+$/.test(str) && str.length > 1) {
+        // Allow ASCII and Cyrillic
+        if (/^[\x20-\x7E\u0400-\u04FF]+$/.test(str) && str.length >= 2) {
           console.log("[FetchPlayer] Found name at offset", offset, ":", str);
           return { name: str };
         }
       }
     }
 
-    console.log("[FetchPlayer] Could not find valid name in data");
+    console.log("[FetchPlayer] Could not find valid name");
     return null;
   } catch (err) {
     console.error("Failed to parse player data:", err);

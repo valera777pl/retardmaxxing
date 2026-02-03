@@ -14,7 +14,7 @@ import { LoginChoice } from "@/components/LoginChoice";
 export default function Home() {
   const { publicKey, disconnect } = useWallet();
   const { isGuestMode, nickname, exitGuestMode } = useGuest();
-  const [playerName, setPlayerName] = useState("");
+  const [inputName, setInputName] = useState("");
 
   const {
     screen,
@@ -27,6 +27,7 @@ export default function Home() {
     playerData,
     txCount,
     guestNickname,
+    playerName,
     initializePlayer,
     startGame,
     useRevive,
@@ -67,7 +68,7 @@ export default function Home() {
         {!connected ? (
           <LoginChoice
             onGuestStart={(name) => {
-              setPlayerName(name);
+              setInputName(name);
             }}
           />
         ) : (
@@ -93,8 +94,8 @@ export default function Home() {
                 <label className="block text-gray-400 mb-2">Player Name</label>
                 <input
                   type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value.slice(0, 20))}
+                  value={inputName}
+                  onChange={(e) => setInputName(e.target.value.slice(0, 20))}
                   placeholder="Enter your name..."
                   maxLength={20}
                   className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:outline-none text-white"
@@ -109,7 +110,7 @@ export default function Home() {
             )}
 
             <button
-              onClick={() => initializePlayer(isGuestMode ? nickname : (playerName || "Anonymous"))}
+              onClick={() => initializePlayer(isGuestMode ? nickname : (inputName || "Anonymous"))}
               disabled={loading}
               className={`
                 w-full px-8 py-4 rounded-lg font-bold text-lg transition-all
@@ -154,8 +155,8 @@ export default function Home() {
       <div className="min-h-screen flex flex-col items-center justify-center p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">Welcome Back!</h1>
-          {playerData?.name && (
-            <p className="text-2xl text-purple-400 font-bold mb-2">{playerData.name}</p>
+          {playerName && (
+            <p className="text-2xl text-purple-400 font-bold mb-2">{playerName}</p>
           )}
           <p className="text-gray-500 text-sm">
             {isGuestMode ? `Guest Mode` : `${publicKey?.toBase58().slice(0, 8)}...`}
