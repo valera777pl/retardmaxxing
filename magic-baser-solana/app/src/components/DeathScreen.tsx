@@ -1,6 +1,7 @@
 "use client";
 
 import { LocalGameState } from "@/types";
+import Image from "next/image";
 
 interface Props {
   state: LocalGameState;
@@ -9,6 +10,20 @@ interface Props {
   onEndGame: () => void;
   loading: boolean;
   isGuestMode?: boolean;
+}
+
+// Stat icon component
+function StatIcon({ src, alt }: { src: string; alt: string }) {
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={12}
+      height={12}
+      className="inline-block mr-1"
+      style={{ imageRendering: 'pixelated' }}
+    />
+  );
 }
 
 export function DeathScreen({
@@ -20,74 +35,96 @@ export function DeathScreen({
   isGuestMode = false,
 }: Props) {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border-2 border-red-500 rounded-xl p-8 max-w-md w-full mx-4 text-center">
-        <h2 className="text-4xl font-bold text-red-500 mb-4">YOU DIED</h2>
-
-        <div className="space-y-2 mb-6 text-gray-300">
-          <p>
-            Wave: <span className="text-white font-bold">{state.wave}</span>
-          </p>
-          <p>
-            Time:{" "}
-            <span className="text-white font-bold">{state.timeSurvived}s</span>
-          </p>
-          <p>
-            Kills: <span className="text-white font-bold">{state.kills}</span>
-          </p>
-          <p>
-            Gold Earned:{" "}
-            <span className="text-yellow-500 font-bold">{state.gold}</span>
-          </p>
-          <p>
-            XP Gained:{" "}
-            <span className="text-green-500 font-bold">{state.xp}</span>
-          </p>
+    <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
+      <div className="screen-enter rpg-frame rpg-frame-corners p-8 max-w-md w-full text-center">
+        {/* Skull decoration */}
+        <div className="skull-decoration mx-auto mb-4">
+          <span>💀</span>
         </div>
 
+        <h2 className="rpg-title text-xl mb-2 text-[var(--blood-light)]">
+          THOU HAST FALLEN
+        </h2>
+
+        <p className="text-[8px] text-[#6a5a4a] mb-6">
+          THE DARKNESS CLAIMS ANOTHER SOUL
+        </p>
+
+        {/* Stats */}
+        <div className="space-y-2 mb-6">
+          <div className="divider-ornate text-[8px]">
+            <span className="text-[var(--gold-dark)]">FINAL TALLY</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[10px]">
+            <div className="rpg-frame p-2">
+              <div className="stat-label flex items-center justify-center">
+                <StatIcon src="/sprites/ui/icon_wave.png" alt="Wave" />
+                WAVE
+              </div>
+              <div className="text-[var(--gold)] text-sm">{state.wave}</div>
+            </div>
+            <div className="rpg-frame p-2">
+              <div className="stat-label flex items-center justify-center">
+                <StatIcon src="/sprites/ui/icon_time.png" alt="Time" />
+                TIME
+              </div>
+              <div className="text-[var(--mana-blue)] text-sm">{state.timeSurvived}s</div>
+            </div>
+            <div className="rpg-frame p-2">
+              <div className="stat-label flex items-center justify-center">
+                <StatIcon src="/sprites/ui/icon_kills.png" alt="Kills" />
+                KILLS
+              </div>
+              <div className="text-[var(--blood-light)] text-sm">{state.kills}</div>
+            </div>
+            <div className="rpg-frame p-2">
+              <div className="stat-label flex items-center justify-center">
+                <StatIcon src="/sprites/ui/icon_gold.png" alt="Gold" />
+                GOLD
+              </div>
+              <div className="text-[var(--gold)] text-sm">{state.gold}</div>
+            </div>
+          </div>
+
+          <div className="rpg-frame p-2">
+            <div className="stat-label">EXP GAINED</div>
+            <div className="text-[var(--xp-purple)] text-sm">{state.xp}</div>
+          </div>
+        </div>
+
+        {/* Actions */}
         <div className="space-y-3">
           {isGuestMode ? (
-            <div className="text-gray-500 py-2">Revive not available in guest mode</div>
+            <div className="text-[8px] text-[#5a4a3a] py-2">
+              REVIVE NOT AVAILABLE IN GUEST MODE
+            </div>
           ) : revivesAvailable > 0 ? (
             <button
               onClick={onRevive}
               disabled={loading}
-              className={`
-                w-full px-6 py-3 rounded-lg font-bold transition-all
-                ${
-                  loading
-                    ? "bg-gray-600 cursor-not-allowed"
-                    : "bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
-                }
-                text-white
-              `}
+              className="pixel-btn pixel-btn-success w-full"
             >
-              {loading ? "Reviving..." : `Revive (${revivesAvailable} left)`}
+              {loading ? "REVIVING..." : `RISE AGAIN (${revivesAvailable} LEFT)`}
             </button>
           ) : (
-            <div className="text-gray-500 py-2">No revives available</div>
+            <div className="text-[8px] text-[#5a4a3a] py-2">
+              NO REVIVES REMAIN
+            </div>
           )}
 
           <button
             onClick={onEndGame}
             disabled={loading}
-            className={`
-              w-full px-6 py-3 rounded-lg font-bold transition-all
-              ${
-                loading
-                  ? "bg-gray-600 cursor-not-allowed"
-                  : "bg-gray-700 hover:bg-gray-600"
-              }
-              text-white
-            `}
+            className="pixel-btn pixel-btn-danger w-full"
           >
-            End Game
+            ACCEPT FATE
           </button>
         </div>
 
         {!isGuestMode && (
-          <p className="text-xs text-gray-500 mt-4">
-            Revive costs ~0.00001 SOL (L1 transaction)
+          <p className="text-[7px] text-[#4a3a2a] mt-4">
+            REVIVE COSTS ~0.00001 SOL (L1 TRANSACTION)
           </p>
         )}
       </div>

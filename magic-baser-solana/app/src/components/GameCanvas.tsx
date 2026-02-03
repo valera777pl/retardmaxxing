@@ -8,9 +8,10 @@ interface Props {
   onStateUpdate: (state: Partial<LocalGameState>) => void;
   isPlaying: boolean;
   onKill?: () => void;
+  characterId?: string;
 }
 
-export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
+export function GameCanvas({ onStateUpdate, isPlaying, onKill, characterId = 'ignis' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
@@ -35,7 +36,8 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
     engineRef.current = new GameEngine(
       canvasRef.current,
       (state) => onStateUpdateRef.current(state),
-      () => onKillRef.current?.()
+      () => onKillRef.current?.(),
+      characterId
     );
 
     return () => {
@@ -43,6 +45,13 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
       engineRef.current = null;
     };
   }, []); // Empty deps - only run on mount!
+
+  // Update character when it changes
+  useEffect(() => {
+    if (engineRef.current && characterId) {
+      engineRef.current.setCharacter(characterId);
+    }
+  }, [characterId]);
 
   // Handle play/pause
   useEffect(() => {
@@ -60,7 +69,8 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill }: Props) {
       ref={canvasRef}
       width={800}
       height={600}
-      className="border-2 border-purple-500 rounded-lg shadow-2xl shadow-purple-500/20"
+      className="rpg-frame"
+      style={{ imageRendering: 'pixelated' }}
     />
   );
 }

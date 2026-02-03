@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useGame } from "@/hooks/useGame";
 import { useGuest } from "@/contexts/GuestContext";
+import { useCoins } from "@/contexts/CoinsContext";
 import { GameCanvas } from "@/components/GameCanvas";
 import { CharacterSelect } from "@/components/CharacterSelect";
 import { DeathScreen } from "@/components/DeathScreen";
@@ -14,6 +15,7 @@ import { LoginChoice } from "@/components/LoginChoice";
 export default function Home() {
   const { publicKey, disconnect } = useWallet();
   const { isGuestMode, nickname, exitGuestMode } = useGuest();
+  const { totalCoins } = useCoins();
   const [inputName, setInputName] = useState("");
 
   const {
@@ -40,10 +42,10 @@ export default function Home() {
   // Loading screen
   if (screen === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--dungeon-bg)]">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading...</p>
+          <div className="dungeon-spinner mx-auto mb-4" />
+          <p className="text-[10px] text-[#6a5a4a]">LOADING...</p>
         </div>
       </div>
     );
@@ -52,16 +54,16 @@ export default function Home() {
   // Menu screen
   if (screen === "menu") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="text-center mb-12">
-          <h1 className="text-6xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent mb-4">
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-[var(--dungeon-bg)]">
+        <div className="screen-enter text-center mb-12">
+          <h1 className="rpg-title text-3xl md:text-4xl mb-4">
             MAGIC BASER
           </h1>
-          <p className="text-xl text-gray-400">
-            Vampire Survivors on Solana
+          <p className="rpg-subtitle text-[8px] md:text-[10px] mb-2">
+            VAMPIRE SURVIVORS ON SOLANA
           </p>
-          <p className="text-sm text-gray-600 mt-2">
-            Powered by MagicBlock Ephemeral Rollups
+          <p className="text-[7px] text-[#4a3a2a]">
+            POWERED BY MAGICBLOCK EPHEMERAL ROLLUPS
           </p>
         </div>
 
@@ -72,58 +74,121 @@ export default function Home() {
             }}
           />
         ) : (
-          <div className="flex flex-col items-center gap-6 w-full max-w-md">
-            {isGuestMode ? (
-              <div className="w-full bg-green-900/30 border border-green-700 rounded-xl p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-green-400 text-sm font-medium">Guest Mode</span>
+          <div className="screen-enter flex flex-col items-center gap-6 w-full max-w-md">
+            {/* Connection status */}
+            <div className="rpg-frame p-4 w-full">
+              {isGuestMode ? (
+                <div className="text-center">
+                  <div className="stat-label mb-2">GUEST ADVENTURER</div>
+                  <p className="text-[var(--forest)] text-sm">{nickname}</p>
                 </div>
-                <p className="text-white font-medium text-lg">{nickname}</p>
-              </div>
-            ) : (
-              <div className="w-full bg-gray-800/50 rounded-xl p-6">
-                <p className="text-sm text-gray-400 mb-2">Connected:</p>
-                <p className="text-white font-mono text-sm truncate">
-                  {publicKey?.toBase58()}
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="text-center">
+                  <div className="stat-label mb-2">WALLET CONNECTED</div>
+                  <p className="text-[var(--gold)] text-[8px] font-mono truncate">
+                    {publicKey?.toBase58()}
+                  </p>
+                </div>
+              )}
+            </div>
 
+            {/* Player name input (wallet mode only) */}
             {!isGuestMode && (
               <div className="w-full">
-                <label className="block text-gray-400 mb-2">Player Name</label>
+                <label className="stat-label block mb-2">ADVENTURER NAME</label>
                 <input
                   type="text"
                   value={inputName}
                   onChange={(e) => setInputName(e.target.value.slice(0, 20))}
-                  placeholder="Enter your name..."
+                  placeholder="Enter thy name..."
                   maxLength={20}
-                  className="w-full px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 focus:border-purple-500 focus:outline-none text-white"
+                  className="pixel-input w-full"
                 />
               </div>
             )}
 
+            {/* Error display */}
             {error && (
-              <div className="w-full p-4 rounded-lg bg-red-500/20 border border-red-500 text-red-400">
-                {error}
+              <div className="rpg-frame p-4 w-full border-[var(--blood)]">
+                <p className="text-[var(--blood-light)] text-[10px]">{error}</p>
               </div>
             )}
 
+            {/* Create player button */}
             <button
               onClick={() => initializePlayer(isGuestMode ? nickname : (inputName || "Anonymous"))}
               disabled={loading}
-              className={`
-                w-full px-8 py-4 rounded-lg font-bold text-lg transition-all
-                ${loading
-                  ? "bg-gray-600 cursor-not-allowed"
-                  : isGuestMode
-                    ? "bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 shadow-lg shadow-green-500/30"
-                    : "bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 shadow-lg shadow-purple-500/30"
-                }
-                text-white
-              `}
+              className={`pixel-btn w-full ${loading ? "" : isGuestMode ? "pixel-btn-success" : "pixel-btn-primary"}`}
             >
-              {loading ? "Creating Player..." : "Create Player"}
+              {loading ? "CREATING HERO..." : "CREATE HERO"}
+            </button>
+
+            {/* Disconnect/Exit button */}
+            <button
+              onClick={() => {
+                if (isGuestMode) {
+                  exitGuestMode();
+                } else {
+                  disconnect();
+                }
+              }}
+              className="pixel-btn text-[10px]"
+            >
+              {isGuestMode ? "EXIT GUEST MODE" : "DISCONNECT WALLET"}
+            </button>
+          </div>
+        )}
+
+        {/* Footer info */}
+        <div className="mt-12 text-center">
+          <p className="text-[7px] text-[#4a3a2a]">10-50MS LATENCY VIA EPHEMERAL ROLLUPS</p>
+          <p className="text-[7px] text-[#4a3a2a]">GASLESS GAMEPLAY • PAY ONLY FOR REVIVES</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Welcome back screen (for existing players)
+  if (screen === "welcome-back") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-[var(--dungeon-bg)]">
+        {/* Torch decorations */}
+        <div className="flex justify-between w-full max-w-md px-4 mb-4">
+          <span className="torch-glow text-2xl">🔥</span>
+          <span className="torch-glow text-2xl">🔥</span>
+        </div>
+
+        <div className="screen-enter rpg-frame rpg-frame-corners p-8 max-w-md w-full text-center">
+          <h1 className="rpg-title text-lg mb-4">WELCOME BACK</h1>
+
+          {playerName && (
+            <p className="text-[var(--gold)] text-lg mb-2">{playerName}</p>
+          )}
+
+          <p className="text-[8px] text-[#6a5a4a] mb-6">
+            {isGuestMode ? "GUEST ADVENTURER" : `${publicKey?.toBase58().slice(0, 8)}...`}
+          </p>
+
+          {/* Vault display */}
+          <div className="vault-display mx-auto mb-6">
+            <div className="coin-icon">$</div>
+            <span className="stat-value">{totalCoins}</span>
+            <span className="stat-label ml-2">VAULT</span>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => setScreen("character-select")}
+              className="pixel-btn pixel-btn-primary w-full"
+            >
+              CONTINUE QUEST
+            </button>
+
+            <button
+              onClick={() => setScreen("menu")}
+              className="pixel-btn w-full"
+            >
+              CHANGE NAME
             </button>
 
             <button
@@ -133,64 +198,13 @@ export default function Home() {
                 } else {
                   disconnect();
                 }
+                setScreen("menu");
               }}
-              className="text-gray-500 hover:text-gray-400 transition-colors"
+              className="pixel-btn text-[10px] mt-2"
             >
-              {isGuestMode ? "Exit Guest Mode" : "Disconnect Wallet"}
+              {isGuestMode ? "EXIT GUEST MODE" : "SWITCH ACCOUNT"}
             </button>
           </div>
-        )}
-
-        <div className="mt-16 text-center text-gray-600 text-sm">
-          <p>10-50ms latency via Ephemeral Rollups</p>
-          <p>Gasless gameplay, pay only for revives</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Welcome back screen (for existing players)
-  if (screen === "welcome-back") {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Welcome Back!</h1>
-          {playerName && (
-            <p className="text-2xl text-purple-400 font-bold mb-2">{playerName}</p>
-          )}
-          <p className="text-gray-500 text-sm">
-            {isGuestMode ? `Guest Mode` : `${publicKey?.toBase58().slice(0, 8)}...`}
-          </p>
-        </div>
-
-        <div className="flex flex-col items-center gap-4 w-full max-w-md">
-          <button
-            onClick={() => setScreen("character-select")}
-            className="w-full px-8 py-4 rounded-lg font-bold text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white transition-all shadow-lg shadow-purple-500/30"
-          >
-            Continue Playing
-          </button>
-
-          <button
-            onClick={() => setScreen("menu")}
-            className="w-full px-8 py-4 rounded-lg font-bold text-lg bg-gray-700 hover:bg-gray-600 text-white transition-all"
-          >
-            Change Nickname
-          </button>
-
-          <button
-            onClick={() => {
-              if (isGuestMode) {
-                exitGuestMode();
-              } else {
-                disconnect();
-              }
-              setScreen("menu");
-            }}
-            className="mt-4 text-gray-500 hover:text-gray-400 transition-colors"
-          >
-            {isGuestMode ? "Exit Guest Mode" : "Switch Account"}
-          </button>
         </div>
       </div>
     );
@@ -199,10 +213,11 @@ export default function Home() {
   // Character select screen
   if (screen === "character-select") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--dungeon-bg)] py-8">
+        {/* Guest mode indicator */}
         {isGuestMode && (
-          <div className="absolute top-4 right-4 bg-green-900/50 border border-green-700 rounded-lg px-4 py-2">
-            <span className="text-green-400 text-sm">Guest: {guestNickname}</span>
+          <div className="absolute top-4 right-4 rpg-frame p-2">
+            <span className="text-[var(--forest)] text-[10px]">GUEST: {guestNickname}</span>
           </div>
         )}
 
@@ -220,12 +235,14 @@ export default function Home() {
           }
         />
 
+        {/* Error display */}
         {error && (
-          <div className="mt-4 p-4 rounded-lg bg-red-500/20 border border-red-500 text-red-400 max-w-md">
-            {error}
+          <div className="mt-4 rpg-frame p-4 max-w-md border-[var(--blood)]">
+            <p className="text-[var(--blood-light)] text-[10px]">{error}</p>
           </div>
         )}
 
+        {/* Back button */}
         <button
           onClick={() => {
             if (isGuestMode) {
@@ -235,9 +252,9 @@ export default function Home() {
             }
             setScreen("menu");
           }}
-          className="mt-6 text-gray-500 hover:text-gray-400 transition-colors"
+          className="mt-6 pixel-btn text-[10px]"
         >
-          {isGuestMode ? "Exit Guest Mode" : "Switch Account"}
+          {isGuestMode ? "EXIT GUEST MODE" : "SWITCH ACCOUNT"}
         </button>
       </div>
     );
@@ -246,34 +263,39 @@ export default function Home() {
   // Playing screen
   if (screen === "playing") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--dungeon-bg)]">
+        {/* Guest mode indicator */}
         {isGuestMode && (
-          <div className="absolute top-4 right-4 bg-green-900/50 border border-green-700 rounded-lg px-4 py-2">
-            <span className="text-green-400 text-sm">Guest: {guestNickname}</span>
+          <div className="absolute top-4 right-4 rpg-frame p-2">
+            <span className="text-[var(--forest)] text-[10px]">GUEST: {guestNickname}</span>
           </div>
         )}
 
         <GameHUD state={localState} txCount={txCount} />
 
-        <GameCanvas
-          onStateUpdate={updateLocalState}
-          isPlaying={!localState.isPaused && !localState.isDead}
-          onKill={syncKillToER}
-        />
+        <div className="rpg-frame p-1">
+          <GameCanvas
+            onStateUpdate={updateLocalState}
+            isPlaying={!localState.isPaused && !localState.isDead}
+            onKill={syncKillToER}
+            characterId={selectedCharacter}
+          />
+        </div>
 
+        {/* Game controls */}
         <div className="mt-4 flex gap-4">
           <button
             onClick={() => updateLocalState({ isPaused: !localState.isPaused })}
-            className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white transition-all"
+            className="pixel-btn text-[10px]"
           >
-            {localState.isPaused ? "Resume" : "Pause"}
+            {localState.isPaused ? "RESUME" : "PAUSE"}
           </button>
           <button
             onClick={endGame}
             disabled={loading}
-            className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all"
+            className="pixel-btn pixel-btn-danger text-[10px]"
           >
-            Quit
+            FLEE
           </button>
         </div>
       </div>
@@ -283,8 +305,8 @@ export default function Home() {
   // Death screen
   if (screen === "dead") {
     return (
-      <div className="min-h-screen relative">
-        <div className="absolute inset-0 flex items-center justify-center">
+      <div className="min-h-screen relative bg-[var(--dungeon-bg)]">
+        <div className="absolute inset-0 flex items-center justify-center opacity-30">
           <GameCanvas
             onStateUpdate={updateLocalState}
             isPlaying={false}
@@ -305,7 +327,7 @@ export default function Home() {
   // Results screen
   if (screen === "results") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--dungeon-bg)]">
         <ResultsScreen
           state={localState}
           onPlayAgain={() => setScreen("character-select")}
@@ -317,8 +339,10 @@ export default function Home() {
 
   // Fallback
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-gray-400">Unknown screen state</p>
+    <div className="min-h-screen flex items-center justify-center bg-[var(--dungeon-bg)]">
+      <div className="rpg-frame p-8">
+        <p className="text-[var(--gold)] text-[10px]">UNKNOWN REALM</p>
+      </div>
     </div>
   );
 }

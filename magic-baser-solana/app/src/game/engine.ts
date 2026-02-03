@@ -2,6 +2,8 @@ import { LocalGameState } from "@/types";
 import { SpriteCache, Particle, createParticles } from "./sprites";
 import { Weapon, createWeapon, WeaponType, getWeaponChoices, WEAPON_UPGRADES } from "./weapons";
 import { EnemyType, getEnemyStats, getRandomEnemyType, shouldSpawnBoss, getWaveConfig, applyEnemyBehavior, getEnemyBehavior, BehaviorType } from "./enemies";
+import { ChunkManager, CHUNK_PIXEL_SIZE } from "./chunks";
+import { getSpriteLoader, getEnemySpritePath, getCharacterSpritePath } from "./spriteLoader";
 
 // Game constants
 const CANVAS_WIDTH = 800;
@@ -13,6 +15,13 @@ const WAVE_DURATION = 30000; // 30 seconds per wave
 interface Vector2 {
   x: number;
   y: number;
+}
+
+interface Camera {
+  x: number;
+  y: number;
+  targetX: number;
+  targetY: number;
 }
 
 interface Player {
@@ -27,6 +36,7 @@ interface Player {
   weapons: Weapon[];
   animFrame: number;
   animTime: number;
+  characterId: string;
 }
 
 interface Enemy {
@@ -56,8 +66,8 @@ interface Projectile {
   lifetime: number;
   pierce: number;
   hitEnemies: Set<number>;
-  angle: number; // for bible rotation
-  orbitDistance?: number; // for bible
+  angle: number;
+  orbitDistance?: number;
 }
 
 interface XPOrb {
@@ -97,6 +107,7 @@ interface GameEngineState {
   showLevelUp: boolean;
   levelUpChoices: { weapon: WeaponType; isUpgrade: boolean }[];
   paused: boolean;
+  camera: Camera;
 }
 
 export class GameEngine {
@@ -109,18 +120,28 @@ export class GameEngine {
   private onKill?: () => void;
   private running: boolean = false;
   private spriteCache: SpriteCache;
+  private chunkManager: ChunkManager;
+  private spritesLoaded: boolean = false;
+  private characterId: string = 'ignis';
 
   constructor(
     canvas: HTMLCanvasElement,
     onStateUpdate: (state: Partial<LocalGameState>) => void,
-    onKill?: () => void
+    onKill?: () => void,
+    characterId?: string
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d")!;
+    this.ctx.imageSmoothingEnabled = false; // Pixel art crisp rendering
     this.onStateUpdate = onStateUpdate;
     this.onKill = onKill;
+    this.characterId = characterId || 'ignis';
     this.spriteCache = SpriteCache.getInstance();
     this.spriteCache.preloadAll();
+    this.chunkManager = new ChunkManager();
+
+    // Load sprites asynchronously
+    this.loadSprites();
 
     // Initialize state
     this.state = this.createInitialState();
@@ -129,10 +150,29 @@ export class GameEngine {
     this.setupInputHandlers();
   }
 
+  private async loadSprites() {
+    const loader = getSpriteLoader();
+    try {
+      await loader.preloadEssential();
+      this.spritesLoaded = true;
+      console.log('Essential sprites loaded');
+      // Load rest in background
+      loader.preloadAll();
+    } catch (e) {
+      console.warn('Some sprites failed to load, using fallbacks');
+      this.spritesLoaded = true;
+    }
+  }
+
+  public setCharacter(characterId: string) {
+    this.characterId = characterId;
+    this.state.player.characterId = characterId;
+  }
+
   private createInitialState(): GameEngineState {
     return {
       player: {
-        pos: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 },
+        pos: { x: CHUNK_PIXEL_SIZE / 2, y: CHUNK_PIXEL_SIZE / 2 },
         vel: { x: 0, y: 0 },
         lastDir: { x: 1, y: 0 },
         hp: 100,
@@ -143,6 +183,7 @@ export class GameEngine {
         weapons: [createWeapon('magic_wand', 1)],
         animFrame: 0,
         animTime: 0,
+        characterId: this.characterId,
       },
       enemies: [],
       projectiles: [],
@@ -164,6 +205,12 @@ export class GameEngine {
       showLevelUp: false,
       levelUpChoices: [],
       paused: false,
+      camera: {
+        x: CHUNK_PIXEL_SIZE / 2 - CANVAS_WIDTH / 2,
+        y: CHUNK_PIXEL_SIZE / 2 - CANVAS_HEIGHT / 2,
+        targetX: CHUNK_PIXEL_SIZE / 2 - CANVAS_WIDTH / 2,
+        targetY: CHUNK_PIXEL_SIZE / 2 - CANVAS_HEIGHT / 2,
+      },
     };
   }
 
@@ -171,7 +218,6 @@ export class GameEngine {
     window.addEventListener("keydown", (e) => {
       this.state.keys.add(e.key.toLowerCase());
 
-      // Handle level up choices with 1, 2, 3
       if (this.state.showLevelUp && ['1', '2', '3'].includes(e.key)) {
         const idx = parseInt(e.key) - 1;
         if (idx < this.state.levelUpChoices.length) {
@@ -189,9 +235,9 @@ export class GameEngine {
     if (this.running) return;
     this.running = true;
     this.lastTime = performance.now();
-    // Only reset state if it's a fresh start (no kills yet)
     if (this.state.kills === 0 && this.state.gameTime === 0) {
       this.state = this.createInitialState();
+      this.chunkManager.reset();
     }
     this.gameLoop(this.lastTime);
   }
@@ -214,6 +260,7 @@ export class GameEngine {
   public reset() {
     this.stop();
     this.state = this.createInitialState();
+    this.chunkManager.reset();
   }
 
   public setPlayerHp(hp: number, maxHp: number) {
@@ -237,53 +284,38 @@ export class GameEngine {
 
   private update(dt: number) {
     this.state.gameTime += dt;
-
-    // Update animations
+    this.updateCamera(dt);
+    this.chunkManager.updateActiveChunks(this.state.player.pos.x, this.state.player.pos.y);
     this.updateAnimations(dt);
-
-    // Update player movement
     this.updatePlayer(dt);
-
-    // Spawn enemies
     this.spawnEnemies();
-
-    // Update enemies
     this.updateEnemies(dt);
-
-    // Fire weapons
     this.fireWeapons();
-
-    // Update projectiles
     this.updateProjectiles(dt);
-
-    // Check collisions
     this.checkCollisions();
-
-    // Collect pickups
     this.collectPickups();
-
-    // Update particles
     this.updateParticles(dt);
-
-    // Check wave progression
     this.checkWaveProgression();
-
-    // Check level up
     this.checkLevelUp();
-
-    // Update external state
     this.syncExternalState();
   }
 
+  private updateCamera(dt: number) {
+    const { camera, player } = this.state;
+    camera.targetX = player.pos.x - CANVAS_WIDTH / 2;
+    camera.targetY = player.pos.y - CANVAS_HEIGHT / 2;
+    const smoothing = 5;
+    camera.x += (camera.targetX - camera.x) * smoothing * dt;
+    camera.y += (camera.targetY - camera.y) * smoothing * dt;
+  }
+
   private updateAnimations(dt: number) {
-    // Player animation
     this.state.player.animTime += dt;
     if (this.state.player.animTime > 0.15) {
       this.state.player.animFrame = (this.state.player.animFrame + 1) % 4;
       this.state.player.animTime = 0;
     }
 
-    // Enemy animations
     for (const enemy of this.state.enemies) {
       enemy.animTime += dt;
       if (enemy.animTime > 0.2) {
@@ -295,7 +327,6 @@ export class GameEngine {
       }
     }
 
-    // Pickup animations
     const pickupAnimSpeed = 0.1;
     for (const orb of this.state.xpOrbs) {
       orb.animFrame = Math.floor(this.state.gameTime / pickupAnimSpeed) % 4;
@@ -307,8 +338,9 @@ export class GameEngine {
 
   private updatePlayer(dt: number) {
     const { player, keys } = this.state;
+    const prevX = player.pos.x;
+    const prevY = player.pos.y;
 
-    // Movement
     player.vel.x = 0;
     player.vel.y = 0;
 
@@ -317,7 +349,6 @@ export class GameEngine {
     if (keys.has("a") || keys.has("arrowleft")) player.vel.x = -1;
     if (keys.has("d") || keys.has("arrowright")) player.vel.x = 1;
 
-    // Normalize diagonal movement
     const len = Math.sqrt(player.vel.x ** 2 + player.vel.y ** 2);
     if (len > 0) {
       player.vel.x /= len;
@@ -325,21 +356,19 @@ export class GameEngine {
       player.lastDir = { x: player.vel.x, y: player.vel.y };
     }
 
-    // Apply movement
     player.pos.x += player.vel.x * player.speed * dt;
     player.pos.y += player.vel.y * player.speed * dt;
 
-    // Clamp to bounds
-    player.pos.x = Math.max(
+    const resolved = this.chunkManager.resolveCollision(
+      player.pos.x,
+      player.pos.y,
       PLAYER_SIZE / 2,
-      Math.min(CANVAS_WIDTH - PLAYER_SIZE / 2, player.pos.x)
+      prevX,
+      prevY
     );
-    player.pos.y = Math.max(
-      PLAYER_SIZE / 2,
-      Math.min(CANVAS_HEIGHT - PLAYER_SIZE / 2, player.pos.y)
-    );
+    player.pos.x = resolved.x;
+    player.pos.y = resolved.y;
 
-    // Update invulnerability
     if (player.invulnerable && Date.now() > player.invulnerableUntil) {
       player.invulnerable = false;
     }
@@ -349,13 +378,11 @@ export class GameEngine {
     const now = Date.now();
     const config = getWaveConfig(this.state.wave);
 
-    // Check boss spawn
     if (shouldSpawnBoss(this.state.wave, this.state.bossSpawnedThisWave)) {
       this.spawnEnemy('boss');
       this.state.bossSpawnedThisWave = true;
     }
 
-    // Regular enemy spawns
     if (now - this.state.lastEnemySpawn > config.spawnInterval &&
         this.state.enemies.length < config.maxEnemies) {
       const enemyType = getRandomEnemyType(this.state.wave);
@@ -365,26 +392,28 @@ export class GameEngine {
   }
 
   private spawnEnemy(type: EnemyType) {
-    const side = Math.floor(Math.random() * 4);
-    let x, y;
+    const { camera } = this.state;
     const stats = getEnemyStats(type, this.state.wave);
+    const side = Math.floor(Math.random() * 4);
+    const spawnDistance = 100;
+    let x, y;
 
     switch (side) {
-      case 0: // Top
-        x = Math.random() * CANVAS_WIDTH;
-        y = -stats.size;
+      case 0:
+        x = camera.x + Math.random() * CANVAS_WIDTH;
+        y = camera.y - spawnDistance;
         break;
-      case 1: // Right
-        x = CANVAS_WIDTH + stats.size;
-        y = Math.random() * CANVAS_HEIGHT;
+      case 1:
+        x = camera.x + CANVAS_WIDTH + spawnDistance;
+        y = camera.y + Math.random() * CANVAS_HEIGHT;
         break;
-      case 2: // Bottom
-        x = Math.random() * CANVAS_WIDTH;
-        y = CANVAS_HEIGHT + stats.size;
+      case 2:
+        x = camera.x + Math.random() * CANVAS_WIDTH;
+        y = camera.y + CANVAS_HEIGHT + spawnDistance;
         break;
-      default: // Left
-        x = -stats.size;
-        y = Math.random() * CANVAS_HEIGHT;
+      default:
+        x = camera.x - spawnDistance;
+        y = camera.y + Math.random() * CANVAS_HEIGHT;
         break;
     }
 
@@ -403,10 +432,18 @@ export class GameEngine {
   private updateEnemies(dt: number) {
     const { player, enemies } = this.state;
 
-    for (const enemy of enemies) {
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const enemy = enemies[i];
       applyEnemyBehavior(enemy, player, enemy.behavior, enemy.speed, this.state.gameTime);
       enemy.pos.x += enemy.vel.x * dt;
       enemy.pos.y += enemy.vel.y * dt;
+
+      const dx = enemy.pos.x - player.pos.x;
+      const dy = enemy.pos.y - player.pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1500) {
+        enemies.splice(i, 1);
+      }
     }
   }
 
@@ -420,24 +457,12 @@ export class GameEngine {
       this.state.weaponCooldowns.set(weapon.type, now);
 
       switch (weapon.type) {
-        case 'magic_wand':
-          this.fireMagicWand(weapon);
-          break;
-        case 'fireball':
-          this.fireFireball(weapon);
-          break;
-        case 'lightning':
-          this.fireLightning(weapon);
-          break;
-        case 'garlic':
-          this.applyGarlic(weapon);
-          break;
-        case 'knife':
-          this.fireKnife(weapon);
-          break;
-        case 'bible':
-          this.updateBible(weapon);
-          break;
+        case 'magic_wand': this.fireMagicWand(weapon); break;
+        case 'fireball': this.fireFireball(weapon); break;
+        case 'lightning': this.fireLightning(weapon); break;
+        case 'garlic': this.applyGarlic(weapon); break;
+        case 'knife': this.fireKnife(weapon); break;
+        case 'bible': this.updateBible(weapon); break;
       }
     }
   }
@@ -506,7 +531,6 @@ export class GameEngine {
       );
       if (dist < garlicRadius) {
         enemy.hp -= weapon.damage;
-        // Push enemy away
         const dx = enemy.pos.x - this.state.player.pos.x;
         const dy = enemy.pos.y - this.state.player.pos.y;
         if (dist > 0) {
@@ -540,7 +564,6 @@ export class GameEngine {
   private updateBible(weapon: Weapon) {
     const existingBibles = this.state.projectiles.filter(p => p.weaponType === 'bible');
 
-    // Ensure correct number of bibles
     while (existingBibles.length < weapon.projectileCount) {
       const angle = (Math.PI * 2 * existingBibles.length) / weapon.projectileCount;
       this.state.projectiles.push({
@@ -558,9 +581,7 @@ export class GameEngine {
       existingBibles.push(this.state.projectiles[this.state.projectiles.length - 1]);
     }
 
-    // Update bible positions
-    for (let i = 0; i < existingBibles.length; i++) {
-      const bible = existingBibles[i];
+    for (const bible of existingBibles) {
       bible.angle += 0.05;
       const dist = bible.orbitDistance || 80;
       bible.pos.x = this.state.player.pos.x + Math.cos(bible.angle) * dist;
@@ -578,10 +599,11 @@ export class GameEngine {
   }
 
   private updateProjectiles(dt: number) {
+    const { camera } = this.state;
+
     for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
       const proj = this.state.projectiles[i];
 
-      // Skip bible position update (handled in updateBible)
       if (proj.weaponType !== 'bible') {
         proj.pos.x += proj.vel.x * dt;
         proj.pos.y += proj.vel.y * dt;
@@ -589,15 +611,29 @@ export class GameEngine {
 
       proj.lifetime -= dt;
 
-      // Remove if expired or out of bounds (except bible)
+      const results = this.chunkManager.damageDecorationAt(proj.pos.x, proj.pos.y, 10, proj.damage);
+      for (const result of results) {
+        if (result.goldDropped > 0) {
+          this.state.goldCoins.push({
+            id: this.state.nextEntityId++,
+            pos: { x: proj.pos.x, y: proj.pos.y },
+            value: result.goldDropped,
+            animFrame: 0,
+          });
+        }
+        if (result.destroyed && proj.weaponType !== 'bible') {
+          proj.pierce--;
+        }
+      }
+
       if (proj.weaponType !== 'bible') {
-        if (
-          proj.lifetime <= 0 ||
-          proj.pos.x < -50 ||
-          proj.pos.x > CANVAS_WIDTH + 50 ||
-          proj.pos.y < -50 ||
-          proj.pos.y > CANVAS_HEIGHT + 50
-        ) {
+        const outOfBounds =
+          proj.pos.x < camera.x - 100 ||
+          proj.pos.x > camera.x + CANVAS_WIDTH + 100 ||
+          proj.pos.y < camera.y - 100 ||
+          proj.pos.y > camera.y + CANVAS_HEIGHT + 100;
+
+        if (proj.lifetime <= 0 || outOfBounds || proj.pierce <= 0) {
           this.state.projectiles.splice(i, 1);
         }
       }
@@ -607,20 +643,17 @@ export class GameEngine {
   private checkCollisions() {
     const { player, enemies, projectiles } = this.state;
 
-    // Projectile vs Enemy
     for (let i = projectiles.length - 1; i >= 0; i--) {
       const proj = projectiles[i];
 
       for (let j = enemies.length - 1; j >= 0; j--) {
         const enemy = enemies[j];
 
-        // Skip if already hit this enemy
         if (proj.hitEnemies.has(enemy.id)) continue;
 
         const dx = proj.pos.x - enemy.pos.x;
         const dy = proj.pos.y - enemy.pos.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
         const hitRadius = proj.weaponType === 'fireball' ? 30 : 15;
 
         if (dist < (hitRadius + enemy.size) / 2) {
@@ -628,19 +661,15 @@ export class GameEngine {
           enemy.hitFlash = 0.15;
           proj.hitEnemies.add(enemy.id);
 
-          // Particles
           this.state.particles.push(...createParticles(enemy.pos.x, enemy.pos.y, 'hit'));
 
-          // Check pierce
           if (proj.hitEnemies.size >= proj.pierce && proj.weaponType !== 'bible') {
             projectiles.splice(i, 1);
           }
 
           if (enemy.hp <= 0) {
-            // Death particles
             this.state.particles.push(...createParticles(enemy.pos.x, enemy.pos.y, 'death'));
 
-            // Drop XP and gold
             this.state.xpOrbs.push({
               id: this.state.nextEntityId++,
               pos: { ...enemy.pos },
@@ -656,8 +685,6 @@ export class GameEngine {
 
             enemies.splice(j, 1);
             this.state.kills++;
-
-            // Trigger instant transaction on kill
             this.onKill?.();
           }
 
@@ -666,7 +693,6 @@ export class GameEngine {
       }
     }
 
-    // Enemy vs Player
     if (!player.invulnerable) {
       for (const enemy of enemies) {
         const dx = player.pos.x - enemy.pos.x;
@@ -678,7 +704,6 @@ export class GameEngine {
           player.invulnerable = true;
           player.invulnerableUntil = Date.now() + 1000;
 
-          // Knockback
           if (dist > 0) {
             player.pos.x += (dx / dist) * 30;
             player.pos.y += (dy / dist) * 30;
@@ -698,14 +723,12 @@ export class GameEngine {
     const collectRadius = 60;
     const magnetRadius = 150;
 
-    // Collect XP
     for (let i = xpOrbs.length - 1; i >= 0; i--) {
       const orb = xpOrbs[i];
       const dx = player.pos.x - orb.pos.x;
       const dy = player.pos.y - orb.pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Magnet effect
       if (dist < magnetRadius && dist > 0) {
         orb.pos.x += (dx / dist) * 5;
         orb.pos.y += (dy / dist) * 5;
@@ -717,14 +740,12 @@ export class GameEngine {
       }
     }
 
-    // Collect Gold
     for (let i = goldCoins.length - 1; i >= 0; i--) {
       const coin = goldCoins[i];
       const dx = player.pos.x - coin.pos.x;
       const dy = player.pos.y - coin.pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      // Magnet effect
       if (dist < magnetRadius && dist > 0) {
         coin.pos.x += (dx / dist) * 4;
         coin.pos.y += (dy / dist) * 4;
@@ -764,11 +785,9 @@ export class GameEngine {
         this.state.player.maxHp
       );
 
-      // Show level up choices
       this.state.showLevelUp = true;
       this.state.levelUpChoices = getWeaponChoices(this.state.player.weapons);
 
-      // Add level up particles
       this.state.particles.push(...createParticles(
         this.state.player.pos.x,
         this.state.player.pos.y,
@@ -782,7 +801,6 @@ export class GameEngine {
     if (!choice) return;
 
     if (choice.isUpgrade) {
-      // Upgrade existing weapon
       const weapon = this.state.player.weapons.find(w => w.type === choice.weapon);
       if (weapon && weapon.level < weapon.maxLevel) {
         const newLevel = weapon.level + 1;
@@ -795,7 +813,6 @@ export class GameEngine {
         weapon.area = upgrade.area;
       }
     } else {
-      // Add new weapon
       this.state.player.weapons.push(createWeapon(choice.weapon, 1));
     }
 
@@ -825,62 +842,56 @@ export class GameEngine {
     });
   }
 
+  // ==================== RENDERING ====================
+
   private render() {
     const { ctx, state } = this;
+    const { camera } = state;
 
-    // Clear canvas
+    ctx.imageSmoothingEnabled = false;
+
+    // Clear canvas with dark background
     ctx.fillStyle = "#1a1a2e";
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw grid
-    ctx.strokeStyle = "#16213e";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < CANVAS_WIDTH; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, CANVAS_HEIGHT);
-      ctx.stroke();
-    }
-    for (let y = 0; y < CANVAS_HEIGHT; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(CANVAS_WIDTH, y);
-      ctx.stroke();
-    }
+    // Render chunk backgrounds (tiles)
+    this.chunkManager.render(ctx, camera.x, camera.y, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Draw garlic aura if active
+    // Render decorations
+    this.chunkManager.renderDecorations(ctx, camera.x, camera.y, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // Draw garlic aura
     const garlicWeapon = state.player.weapons.find(w => w.type === 'garlic');
     if (garlicWeapon) {
-      ctx.fillStyle = 'rgba(100, 255, 100, 0.1)';
+      const screenX = state.player.pos.x - camera.x;
+      const screenY = state.player.pos.y - camera.y;
+      ctx.fillStyle = 'rgba(100, 255, 100, 0.15)';
       ctx.beginPath();
-      ctx.arc(state.player.pos.x, state.player.pos.y, garlicWeapon.range * garlicWeapon.area, 0, Math.PI * 2);
+      ctx.arc(screenX, screenY, garlicWeapon.range * garlicWeapon.area, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Draw particles (behind everything)
+    // Draw particles
     for (const p of state.particles) {
       ctx.globalAlpha = p.life / p.maxLife;
       ctx.fillStyle = p.color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.arc(p.x - camera.x, p.y - camera.y, p.size, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
 
-    // Draw XP orbs
+    // Draw pickups with sprites
     this.renderPickups();
 
-    // Draw enemies
+    // Draw enemies with sprites
     this.renderEnemies();
 
     // Draw projectiles
     this.renderProjectiles();
 
-    // Draw player
+    // Draw player with sprite
     this.renderPlayer();
-
-    // Draw HUD
-    this.renderHUD();
 
     // Draw level up screen
     if (state.showLevelUp) {
@@ -890,130 +901,163 @@ export class GameEngine {
 
   private renderPickups() {
     const { ctx, state } = this;
+    const { camera } = state;
+    const loader = getSpriteLoader();
 
     // XP Orbs
+    const xpSprite = loader.get('/sprites/effects/xp_gem.png');
     for (const orb of state.xpOrbs) {
+      const screenX = orb.pos.x - camera.x;
+      const screenY = orb.pos.y - camera.y;
       const floatOffset = Math.sin(state.gameTime * 5 + orb.id) * 3;
-      ctx.fillStyle = '#00ff88';
-      ctx.beginPath();
-      ctx.moveTo(orb.pos.x, orb.pos.y - 6 + floatOffset);
-      ctx.lineTo(orb.pos.x + 6, orb.pos.y + floatOffset);
-      ctx.lineTo(orb.pos.x, orb.pos.y + 6 + floatOffset);
-      ctx.lineTo(orb.pos.x - 6, orb.pos.y + floatOffset);
-      ctx.closePath();
-      ctx.fill();
+
+      if (xpSprite) {
+        ctx.drawImage(xpSprite, screenX - 8, screenY - 8 + floatOffset, 16, 16);
+      } else {
+        // Fallback
+        ctx.fillStyle = '#00ff88';
+        ctx.beginPath();
+        ctx.moveTo(screenX, screenY - 6 + floatOffset);
+        ctx.lineTo(screenX + 6, screenY + floatOffset);
+        ctx.lineTo(screenX, screenY + 6 + floatOffset);
+        ctx.lineTo(screenX - 6, screenY + floatOffset);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
 
     // Gold coins
+    const goldSprite = loader.get('/sprites/effects/gold_gem.png');
     for (const coin of state.goldCoins) {
+      const screenX = coin.pos.x - camera.x;
+      const screenY = coin.pos.y - camera.y;
       const floatOffset = Math.sin(state.gameTime * 4 + coin.id) * 2;
-      ctx.fillStyle = '#ffd700';
-      ctx.beginPath();
-      ctx.arc(coin.pos.x, coin.pos.y + floatOffset, 8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ffec8b';
-      ctx.beginPath();
-      ctx.arc(coin.pos.x, coin.pos.y + floatOffset, 5, 0, Math.PI * 2);
-      ctx.fill();
+
+      if (goldSprite) {
+        ctx.drawImage(goldSprite, screenX - 8, screenY - 8 + floatOffset, 16, 16);
+      } else {
+        // Fallback
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.arc(screenX, screenY + floatOffset, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffec8b';
+        ctx.beginPath();
+        ctx.arc(screenX, screenY + floatOffset, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
   private renderEnemies() {
     const { ctx, state } = this;
+    const { camera } = state;
+    const loader = getSpriteLoader();
 
     for (const enemy of state.enemies) {
-      // Hit flash effect
+      const screenX = enemy.pos.x - camera.x;
+      const screenY = enemy.pos.y - camera.y;
+
+      // Skip if off screen
+      if (screenX < -50 || screenX > CANVAS_WIDTH + 50 ||
+          screenY < -50 || screenY > CANVAS_HEIGHT + 50) continue;
+
+      const spritePath = getEnemySpritePath(enemy.type);
+      const sprite = loader.get(spritePath);
+      const size = enemy.size;
+
+      // Hit flash effect - draw white overlay
       if (enemy.hitFlash > 0) {
-        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.7;
+      }
+
+      if (sprite) {
+        // Draw enemy sprite scaled to their size
+        const drawSize = Math.max(size, 32);
+        ctx.drawImage(
+          sprite,
+          screenX - drawSize / 2,
+          screenY - drawSize / 2,
+          drawSize,
+          drawSize
+        );
+
+        // White overlay for hit flash
+        if (enemy.hitFlash > 0) {
+          ctx.globalCompositeOperation = 'source-atop';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(screenX - drawSize / 2, screenY - drawSize / 2, drawSize, drawSize);
+          ctx.globalCompositeOperation = 'source-over';
+        }
       } else {
+        // Fallback: colored circle
         switch (enemy.type) {
           case 'basic': ctx.fillStyle = '#e74c3c'; break;
           case 'fast': ctx.fillStyle = '#9b59b6'; break;
           case 'tank': ctx.fillStyle = '#566573'; break;
           case 'boss': ctx.fillStyle = '#f1c40f'; break;
         }
-      }
 
-      // Draw enemy body
-      if (enemy.type === 'boss') {
-        // Boss is larger and more detailed
         ctx.beginPath();
-        ctx.arc(enemy.pos.x, enemy.pos.y, enemy.size / 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Horns
-        ctx.fillStyle = enemy.hitFlash > 0 ? '#ffffff' : '#b7950b';
-        ctx.beginPath();
-        ctx.moveTo(enemy.pos.x - 15, enemy.pos.y - 20);
-        ctx.lineTo(enemy.pos.x - 10, enemy.pos.y - 35);
-        ctx.lineTo(enemy.pos.x - 5, enemy.pos.y - 20);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(enemy.pos.x + 15, enemy.pos.y - 20);
-        ctx.lineTo(enemy.pos.x + 10, enemy.pos.y - 35);
-        ctx.lineTo(enemy.pos.x + 5, enemy.pos.y - 20);
-        ctx.fill();
-
-        // Glowing eyes
-        ctx.fillStyle = '#ff0000';
-        ctx.fillRect(enemy.pos.x - 12, enemy.pos.y - 8, 6, 6);
-        ctx.fillRect(enemy.pos.x + 6, enemy.pos.y - 8, 6, 6);
-      } else {
-        ctx.beginPath();
-        ctx.arc(enemy.pos.x, enemy.pos.y, enemy.size / 2, 0, Math.PI * 2);
+        ctx.arc(screenX, screenY, size / 2, 0, Math.PI * 2);
         ctx.fill();
 
         // Eyes
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(enemy.pos.x - 6, enemy.pos.y - 4, 3, 3);
-        ctx.fillRect(enemy.pos.x + 3, enemy.pos.y - 4, 3, 3);
+        ctx.fillRect(screenX - 6, screenY - 4, 3, 3);
+        ctx.fillRect(screenX + 3, screenY - 4, 3, 3);
       }
+
+      ctx.globalAlpha = 1;
 
       // Health bar
       const hpPercent = enemy.hp / enemy.maxHp;
       ctx.fillStyle = "#333";
-      ctx.fillRect(enemy.pos.x - 15, enemy.pos.y - enemy.size / 2 - 8, 30, 4);
+      ctx.fillRect(screenX - 15, screenY - size / 2 - 8, 30, 4);
       ctx.fillStyle = enemy.type === 'boss' ? '#f1c40f' : '#e74c3c';
-      ctx.fillRect(enemy.pos.x - 15, enemy.pos.y - enemy.size / 2 - 8, 30 * hpPercent, 4);
+      ctx.fillRect(screenX - 15, screenY - size / 2 - 8, 30 * hpPercent, 4);
     }
   }
 
   private renderProjectiles() {
     const { ctx, state } = this;
+    const { camera } = state;
 
     for (const proj of state.projectiles) {
+      const screenX = proj.pos.x - camera.x;
+      const screenY = proj.pos.y - camera.y;
+
       switch (proj.weaponType) {
         case 'magic_wand':
           ctx.fillStyle = '#00d4ff';
           ctx.beginPath();
-          ctx.arc(proj.pos.x, proj.pos.y, 6, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
           ctx.fill();
-          // Glow
           ctx.fillStyle = 'rgba(0, 212, 255, 0.3)';
           ctx.beginPath();
-          ctx.arc(proj.pos.x, proj.pos.y, 10, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
           ctx.fill();
           break;
 
         case 'fireball':
           ctx.fillStyle = '#ff6347';
           ctx.beginPath();
-          ctx.arc(proj.pos.x, proj.pos.y, 12, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 12, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = '#ffa500';
           ctx.beginPath();
-          ctx.arc(proj.pos.x, proj.pos.y, 8, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 8, 0, Math.PI * 2);
           ctx.fill();
           ctx.fillStyle = '#ffff00';
           ctx.beginPath();
-          ctx.arc(proj.pos.x, proj.pos.y, 4, 0, Math.PI * 2);
+          ctx.arc(screenX, screenY, 4, 0, Math.PI * 2);
           ctx.fill();
           break;
 
         case 'knife':
           ctx.fillStyle = '#c0c0c0';
           ctx.save();
-          ctx.translate(proj.pos.x, proj.pos.y);
+          ctx.translate(screenX, screenY);
           ctx.rotate(proj.angle);
           ctx.fillRect(-8, -2, 16, 4);
           ctx.fillStyle = '#808080';
@@ -1024,7 +1068,7 @@ export class GameEngine {
         case 'bible':
           ctx.fillStyle = '#f5deb3';
           ctx.save();
-          ctx.translate(proj.pos.x, proj.pos.y);
+          ctx.translate(screenX, screenY);
           ctx.rotate(proj.angle * 2);
           ctx.fillRect(-8, -10, 16, 20);
           ctx.fillStyle = '#8b4513';
@@ -1038,89 +1082,71 @@ export class GameEngine {
 
   private renderPlayer() {
     const { ctx, state } = this;
-    const { player } = state;
+    const { player, camera } = state;
+    const screenX = player.pos.x - camera.x;
+    const screenY = player.pos.y - camera.y;
+    const loader = getSpriteLoader();
 
     // Invulnerability flash
     if (player.invulnerable && Math.floor(state.gameTime * 10) % 2 === 0) {
       ctx.globalAlpha = 0.5;
     }
 
-    // Body
-    ctx.fillStyle = '#0f3460';
-    ctx.beginPath();
-    ctx.arc(player.pos.x, player.pos.y, PLAYER_SIZE / 2, 0, Math.PI * 2);
-    ctx.fill();
+    const spritePath = getCharacterSpritePath(player.characterId);
+    const sprite = loader.get(spritePath);
 
-    // Face
-    ctx.fillStyle = '#5dade2';
-    ctx.beginPath();
-    ctx.arc(player.pos.x, player.pos.y - 4, PLAYER_SIZE / 3, 0, Math.PI * 2);
-    ctx.fill();
+    if (sprite) {
+      // Draw character sprite (scaled up from 32x32 to 48x48 for visibility)
+      const drawSize = 48;
+      ctx.drawImage(
+        sprite,
+        screenX - drawSize / 2,
+        screenY - drawSize / 2,
+        drawSize,
+        drawSize
+      );
+    } else {
+      // Fallback: blue wizard circle
+      ctx.fillStyle = '#0f3460';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, PLAYER_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Eyes
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(player.pos.x - 6, player.pos.y - 8, 4, 4);
-    ctx.fillRect(player.pos.x + 2, player.pos.y - 8, 4, 4);
+      ctx.fillStyle = '#5dade2';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY - 4, PLAYER_SIZE / 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(screenX - 6, screenY - 8, 4, 4);
+      ctx.fillRect(screenX + 2, screenY - 8, 4, 4);
+    }
 
     ctx.globalAlpha = 1;
 
-    // Health bar
+    // Health bar above player
     const hpPercent = player.hp / player.maxHp;
     ctx.fillStyle = "#333";
-    ctx.fillRect(player.pos.x - 20, player.pos.y - 26, 40, 6);
+    ctx.fillRect(screenX - 20, screenY - 30, 40, 6);
     ctx.fillStyle = hpPercent > 0.3 ? '#00ff88' : '#ff4444';
-    ctx.fillRect(player.pos.x - 20, player.pos.y - 26, 40 * hpPercent, 6);
-  }
-
-  private renderHUD() {
-    const { ctx, state } = this;
-
-    // Background panel
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(5, 5, 150, 140);
-
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 14px monospace";
-    ctx.fillText(`Wave: ${state.wave}`, 15, 25);
-    ctx.fillText(`Level: ${state.level}`, 15, 45);
-    ctx.fillText(`XP: ${state.xp}`, 15, 65);
-    ctx.fillText(`Gold: ${state.gold}`, 15, 85);
-    ctx.fillText(`Kills: ${state.kills}`, 15, 105);
-    ctx.fillText(`Time: ${Math.floor(state.gameTime)}s`, 15, 125);
-
-    // Weapons display
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(CANVAS_WIDTH - 160, 5, 155, 25 + state.player.weapons.length * 20);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 12px monospace';
-    ctx.fillText('Weapons:', CANVAS_WIDTH - 150, 20);
-
-    state.player.weapons.forEach((w, i) => {
-      ctx.fillStyle = '#aaaaaa';
-      ctx.font = '11px monospace';
-      ctx.fillText(`${w.name} Lv.${w.level}`, CANVAS_WIDTH - 150, 40 + i * 20);
-    });
+    ctx.fillRect(screenX - 20, screenY - 30, 40 * hpPercent, 6);
   }
 
   private renderLevelUpScreen() {
     const { ctx, state } = this;
 
-    // Dim background
     ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Title
     ctx.fillStyle = '#ffd700';
-    ctx.font = 'bold 32px monospace';
+    ctx.font = 'bold 32px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('LEVEL UP!', CANVAS_WIDTH / 2, 100);
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = '16px monospace';
+    ctx.font = '16px "Press Start 2P", monospace';
     ctx.fillText(`Level ${state.level}`, CANVAS_WIDTH / 2, 130);
 
-    // Choices
     const choiceWidth = 200;
     const choiceHeight = 150;
     const startX = CANVAS_WIDTH / 2 - (state.levelUpChoices.length * choiceWidth + (state.levelUpChoices.length - 1) * 20) / 2;
@@ -1129,43 +1155,38 @@ export class GameEngine {
       const x = startX + i * (choiceWidth + 20);
       const y = 180;
 
-      // Box
       ctx.fillStyle = '#2a2a4e';
       ctx.fillRect(x, y, choiceWidth, choiceHeight);
       ctx.strokeStyle = '#5dade2';
       ctx.lineWidth = 2;
       ctx.strokeRect(x, y, choiceWidth, choiceHeight);
 
-      // Key hint
       ctx.fillStyle = '#ffd700';
-      ctx.font = 'bold 20px monospace';
+      ctx.font = 'bold 20px "Press Start 2P", monospace';
       ctx.fillText(`[${i + 1}]`, x + choiceWidth / 2, y + 30);
 
-      // Weapon name
       const weaponDef = choice.isUpgrade
         ? state.player.weapons.find(w => w.type === choice.weapon)
         : { name: choice.weapon.replace('_', ' ').toUpperCase(), level: 0 };
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px monospace';
+      ctx.font = 'bold 12px "Press Start 2P", monospace';
       ctx.fillText(
         choice.isUpgrade ? `${weaponDef?.name || choice.weapon}` : choice.weapon.replace('_', ' '),
         x + choiceWidth / 2,
         y + 60
       );
 
-      // Level/New indicator
       ctx.fillStyle = choice.isUpgrade ? '#00ff88' : '#ff6347';
-      ctx.font = '12px monospace';
+      ctx.font = '10px "Press Start 2P", monospace';
       ctx.fillText(
         choice.isUpgrade ? `Lv.${(weaponDef?.level || 0) + 1}` : 'NEW!',
         x + choiceWidth / 2,
         y + 85
       );
 
-      // Description
       ctx.fillStyle = '#aaaaaa';
-      ctx.font = '11px monospace';
+      ctx.font = '8px "Press Start 2P", monospace';
       if (choice.isUpgrade && weaponDef) {
         const nextLevel = (weaponDef.level || 0) + 1;
         const upgrade = WEAPON_UPGRADES[choice.weapon][nextLevel - 1];

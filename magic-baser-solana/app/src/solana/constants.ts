@@ -80,14 +80,209 @@ export const SUBMIT_SCORE_SYSTEM_ID = new PublicKey("6did5KX3mcbi58jUQ85ZtTV5ahC
 
 // Game constants
 export const GAME_SYNC_INTERVAL_MS = 200; // Sync to ER every 200ms
-export const DEFAULT_CHARACTER = "imelda";
+export const DEFAULT_CHARACTER = "ignis";
 
-export const CHARACTERS = {
-  imelda: { name: "Imelda", hp: 100, description: "Balanced starter" },
-  antonio: { name: "Antonio", hp: 120, description: "Tank build" },
-  pasqualina: { name: "Pasqualina", hp: 80, description: "Glass cannon" },
-  gennaro: { name: "Gennaro", hp: 110, description: "Melee specialist" },
-  mortaccio: { name: "Mortaccio", hp: 90, description: "Undead summoner" },
+// Character tier types
+export type CharacterTier = "Starter" | "I" | "II" | "III" | "IV" | "Legendary";
+
+// Passive ability interface
+export interface PassiveAbility {
+  name: string;
+  description: string;
+  color: string;
+}
+
+// Extended character interface
+export interface CharacterData {
+  name: string;
+  hp: number;
+  speed: number;       // Multiplier (1.0 = normal)
+  damage: number;      // Multiplier (1.0 = normal)
+  price: number;       // 0 = FREE
+  tier: CharacterTier;
+  description: string;
+  emoji: string;
+  sprite: string;      // Path to sprite file
+  passive: PassiveAbility;
+}
+
+// Extended characters with stats, prices, tiers and passives
+export const CHARACTERS: Record<string, CharacterData> = {
+  // Starter - FREE (Fire mage)
+  ignis: {
+    name: "Ignis",
+    hp: 100,
+    speed: 1.0,
+    damage: 1.0,
+    price: 0,
+    tier: "Starter",
+    description: "Fire mage, balanced",
+    emoji: "🔥",
+    sprite: "/sprites/characters/ignis.png",
+    passive: {
+      name: "Fire Trail",
+      description: "Leaves burning ground (3s), 5 dmg/sec",
+      color: "#FF4444",
+    },
+  },
+
+  // Tier I - 100 coins
+  gleisha: {
+    name: "Gleisha",
+    hp: 80,
+    speed: 1.2,
+    damage: 1.1,
+    price: 100,
+    tier: "I",
+    description: "Ice sorceress",
+    emoji: "❄️",
+    sprite: "/sprites/characters/gleisha.png",
+    passive: {
+      name: "Frost Aura",
+      description: "Slows enemies by 20% in 50px radius",
+      color: "#88CCFF",
+    },
+  },
+  lumen: {
+    name: "Lumen",
+    hp: 90,
+    speed: 1.0,
+    damage: 1.2,
+    price: 100,
+    tier: "I",
+    description: "Light priest",
+    emoji: "✨",
+    sprite: "/sprites/characters/lumen.png",
+    passive: {
+      name: "Holy Light",
+      description: "Regenerate 1 HP every 5 seconds",
+      color: "#FFEE88",
+    },
+  },
+
+  // Tier II - 250 coins
+  umbra: {
+    name: "Umbra",
+    hp: 70,
+    speed: 1.3,
+    damage: 1.3,
+    price: 250,
+    tier: "II",
+    description: "Shadow assassin",
+    emoji: "🌑",
+    sprite: "/sprites/characters/umbra.png",
+    passive: {
+      name: "Shadow Step",
+      description: "10% chance to dodge attacks",
+      color: "#6644AA",
+    },
+  },
+  nektra: {
+    name: "Nektra",
+    hp: 85,
+    speed: 1.0,
+    damage: 1.1,
+    price: 250,
+    tier: "II",
+    description: "Necromancer",
+    emoji: "💀",
+    sprite: "/sprites/characters/nektra.png",
+    passive: {
+      name: "Life Drain",
+      description: "Heal 1 HP per 10 kills",
+      color: "#44AA44",
+    },
+  },
+
+  // Tier III - 500 coins
+  runika: {
+    name: "Runika",
+    hp: 110,
+    speed: 0.9,
+    damage: 1.4,
+    price: 500,
+    tier: "III",
+    description: "Rune master",
+    emoji: "📜",
+    sprite: "/sprites/characters/runika.png",
+    passive: {
+      name: "Rune Shield",
+      description: "Block one attack every 30 seconds",
+      color: "#AABBFF",
+    },
+  },
+  vitalis: {
+    name: "Vitalis",
+    hp: 150,
+    speed: 0.8,
+    damage: 0.9,
+    price: 500,
+    tier: "III",
+    description: "Nature guardian",
+    emoji: "🌿",
+    sprite: "/sprites/characters/vitalis.png",
+    passive: {
+      name: "Nature's Gift",
+      description: "+50% HP pickup effectiveness",
+      color: "#66DD66",
+    },
+  },
+
+  // Tier IV - 1000 coins
+  archon: {
+    name: "Archon",
+    hp: 100,
+    speed: 1.1,
+    damage: 1.5,
+    price: 1000,
+    tier: "IV",
+    description: "Arcane lord",
+    emoji: "⚡",
+    sprite: "/sprites/characters/archon.png",
+    passive: {
+      name: "Arcane Mastery",
+      description: "+15% weapon cooldown reduction",
+      color: "#AA88FF",
+    },
+  },
+
+  // Legendary - 2500 coins (placeholder - no sprite yet)
+  azrael: {
+    name: "Azrael",
+    hp: 130,
+    speed: 1.2,
+    damage: 1.4,
+    price: 2500,
+    tier: "Legendary",
+    description: "Death's herald",
+    emoji: "☠️",
+    sprite: "/sprites/characters/archon.png", // Fallback to archon sprite
+    passive: {
+      name: "Death's Touch",
+      description: "5% chance to instantly kill non-boss enemies",
+      color: "#FF44FF",
+    },
+  },
 } as const;
+
+// Character tier groupings for UI display
+export const CHARACTER_TIERS: Record<CharacterTier, string[]> = {
+  Starter: ["ignis"],
+  I: ["gleisha", "lumen"],
+  II: ["umbra", "nektra"],
+  III: ["runika", "vitalis"],
+  IV: ["archon"],
+  Legendary: ["azrael"],
+};
+
+// Tier display info
+export const TIER_INFO: Record<CharacterTier, { label: string; color: string }> = {
+  Starter: { label: "FREE", color: "tier-starter" },
+  I: { label: "TIER I", color: "tier-i" },
+  II: { label: "TIER II", color: "tier-ii" },
+  III: { label: "TIER III", color: "tier-iii" },
+  IV: { label: "TIER IV", color: "tier-iv" },
+  Legendary: { label: "LEGEND", color: "tier-legendary" },
+};
 
 export type CharacterId = keyof typeof CHARACTERS;
