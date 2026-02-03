@@ -126,19 +126,10 @@ export function GameHUD({ state, txCount = 0, onResume }: Props) {
           onClick={onResume}
         >
           <div className="rpg-frame rpg-frame-corners p-8 text-center">
-            <div className="rpg-title text-2xl torch-glow mb-4">
+            <div className="rpg-title text-2xl torch-glow mb-2">
               PAUSED
             </div>
-            <p className="text-[12px] text-[#8a7a6a] mb-4">CLICK ANYWHERE TO RESUME</p>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onResume?.();
-              }}
-              className="pixel-btn pixel-btn-primary"
-            >
-              RESUME
-            </button>
+            <p className="text-[10px] text-[#6a5a4a]">CLICK ANYWHERE TO RESUME</p>
           </div>
         </div>
       )}
