@@ -186,10 +186,13 @@ export async function buildStartGameTx(
 }
 
 // Update stats (gasless on ER)
+// entityOwner: the public key used for entity derivation (user's wallet)
+// signer: the public key that will sign the transaction (can be session keypair)
 export async function buildUpdateStatsTx(
   worldPda: PublicKey,
   worldId: BN,
-  authority: PublicKey,
+  entityOwner: PublicKey,
+  signer: PublicKey,
   stats: {
     hp: number;
     xp: number;
@@ -202,7 +205,8 @@ export async function buildUpdateStatsTx(
   },
   connection: Connection
 ): Promise<Transaction> {
-  const sessionSeed = getEntitySeed(authority, "session");
+  // Entity is derived from the original owner (user's wallet)
+  const sessionSeed = getEntitySeed(entityOwner, "session");
   const sessionEntity = FindEntityPda({
     worldId,
     seed: sessionSeed,
@@ -211,8 +215,9 @@ export async function buildUpdateStatsTx(
   // Setup Anchor provider for BOLT SDK
   setupAnchorProvider(connection);
 
+  // Signer can be different from entity owner (e.g., session keypair)
   const result = await ApplySystem({
-    authority,
+    authority: signer,
     systemId: UPDATE_STATS_SYSTEM_ID,
     world: worldPda,
     entities: [

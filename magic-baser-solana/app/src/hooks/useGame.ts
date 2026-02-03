@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
-import { PublicKey, Transaction } from "@solana/web3.js";
+import { PublicKey, Transaction, Keypair } from "@solana/web3.js";
 import { BN } from "@coral-xyz/anchor";
 import {
   LocalGameState,
@@ -69,6 +69,9 @@ export function useGame() {
   const gameStartTimeRef = useRef<number>(0);
   const lastKillSyncRef = useRef<number>(0);
   const localStateRef = useRef<LocalGameState>(localState);
+
+  // Session keypair for auto-signing ER transactions (no wallet popup)
+  const sessionKeypairRef = useRef<Keypair | null>(null);
 
 
   // Keep localStateRef in sync with localState (for use in callbacks without causing re-renders)
@@ -244,6 +247,10 @@ export function useGame() {
         setTxCount(0);
         lastKillSyncRef.current = 0;
 
+        // Create session keypair for auto-signing ER transactions
+        sessionKeypairRef.current = Keypair.generate();
+        console.log("[StartGame] Session keypair:", sessionKeypairRef.current.publicKey.toBase58());
+
         gameStartTimeRef.current = Date.now();
         setSelectedCharacter(characterId);
         setScreen("playing");
@@ -260,77 +267,96 @@ export function useGame() {
     [publicKey, signTransaction, worldPda, connection]
   );
 
-  // Sync local state to ER (gasless)
+  // Sync local state to ER (gasless) - uses session keypair for auto-signing
   const syncToER = useCallback(async () => {
-    if (!publicKey || !signTransaction || localState.isPaused) return;
+    if (!publicKey || !sessionKeypairRef.current || localState.isPaused) return;
 
     try {
-      const tx = await buildUpdateStatsTx(worldPda, WORLD_ID, publicKey, {
-        hp: localState.hp,
-        xp: localState.xp,
-        goldEarned: localState.gold,
-        timeSurvived: localState.timeSurvived,
-        wave: localState.wave,
-        kills: localState.kills,
-        level: localState.level,
-        isDead: localState.isDead,
-      }, magicRouterConnection);
+      const sessionKp = sessionKeypairRef.current;
 
-      // Use Magic Router for gasless ER transactions
-      tx.recentBlockhash = (
-        await magicRouterConnection.getLatestBlockhash()
-      ).blockhash;
-      tx.feePayer = publicKey;
+      // Entity derived from user's wallet, signed by session keypair
+      const tx = await buildUpdateStatsTx(
+        worldPda,
+        WORLD_ID,
+        publicKey,           // entityOwner - for PDA derivation
+        sessionKp.publicKey, // signer - session keypair
+        {
+          hp: localState.hp,
+          xp: localState.xp,
+          goldEarned: localState.gold,
+          timeSurvived: localState.timeSurvived,
+          wave: localState.wave,
+          kills: localState.kills,
+          level: localState.level,
+          isDead: localState.isDead,
+        },
+        magicRouterConnection
+      );
 
-      const signed = await signTransaction(tx);
-      await magicRouterConnection.sendRawTransaction(signed.serialize(), {
+      tx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
+      tx.feePayer = sessionKp.publicKey;
+
+      // Auto-sign with session keypair - NO WALLET POPUP!
+      tx.sign(sessionKp);
+
+      await magicRouterConnection.sendRawTransaction(tx.serialize(), {
         skipPreflight: true,
       });
     } catch (err) {
       console.warn("ER sync error (non-fatal):", err);
     }
-  }, [publicKey, signTransaction, worldPda, localState]);
+  }, [publicKey, worldPda, localState]);
 
-  // Sync stats to ER periodically (not on every kill to avoid wallet popup spam)
-  // TODO: Implement proper session keys for auto-signing
-  // See: https://docs.magicblock.gg/pages/tools/session-keys/
+  // Instant sync on kill - uses session keypair for auto-signing (no wallet popup!)
   const syncKillToER = useCallback(async () => {
-    // Currently disabled - wallet popup on every kill is bad UX
-    // Enable after implementing session keys in BOLT systems
-    return;
-
-    /* Session keys require on-chain program changes:
-    if (!publicKey || !signTransaction) return;
+    if (!publicKey || !sessionKeypairRef.current) return;
 
     const state = localStateRef.current;
     if (state.isPaused) return;
 
+    // Throttle to 100ms between transactions
     const now = Date.now();
-    if (now - lastKillSyncRef.current < 5000) return; // 5 second throttle
+    if (now - lastKillSyncRef.current < 100) return;
     lastKillSyncRef.current = now;
 
     try {
-      const tx = await buildUpdateStatsTx(worldPda, WORLD_ID, publicKey, {
-        hp: state.hp,
-        xp: state.xp,
-        goldEarned: state.gold,
-        timeSurvived: state.timeSurvived,
-        wave: state.wave,
-        kills: state.kills,
-        level: state.level,
-        isDead: state.isDead,
-      }, magicRouterConnection);
+      const sessionKp = sessionKeypairRef.current;
+
+      // Entity derived from user's wallet, signed by session keypair
+      const tx = await buildUpdateStatsTx(
+        worldPda,
+        WORLD_ID,
+        publicKey,           // entityOwner
+        sessionKp.publicKey, // signer
+        {
+          hp: state.hp,
+          xp: state.xp,
+          goldEarned: state.gold,
+          timeSurvived: state.timeSurvived,
+          wave: state.wave,
+          kills: state.kills,
+          level: state.level,
+          isDead: state.isDead,
+        },
+        magicRouterConnection
+      );
 
       tx.recentBlockhash = (await magicRouterConnection.getLatestBlockhash()).blockhash;
-      tx.feePayer = publicKey;
-      const signed = await signTransaction(tx);
-      const sig = await magicRouterConnection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
-      console.log("[Sync] Stats synced:", sig);
+      tx.feePayer = sessionKp.publicKey;
+
+      // Auto-sign with session keypair - NO WALLET POPUP!
+      tx.sign(sessionKp);
+
+      const sig = await magicRouterConnection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: true,
+      });
+
+      console.log("[KillTx] Auto-signed:", sig);
       setTxCount(prev => prev + 1);
     } catch (err) {
-      console.warn("[Sync] Failed:", err);
+      // Silent fail - ER transactions are not critical
+      console.warn("[KillTx] Failed:", err);
     }
-    */
   }, [publicKey, worldPda]);
 
   // Start sync loop
