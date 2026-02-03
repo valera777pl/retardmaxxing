@@ -60,6 +60,7 @@ export interface LocalGameState {
 export type GameScreen =
   | "loading"
   | "menu"
+  | "welcome-back"
   | "character-select"
   | "playing"
   | "paused"

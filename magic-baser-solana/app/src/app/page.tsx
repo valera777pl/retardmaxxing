@@ -148,6 +148,53 @@ export default function Home() {
     );
   }
 
+  // Welcome back screen (for existing players)
+  if (screen === "welcome-back") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-8">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">Welcome Back!</h1>
+          {playerData?.name && (
+            <p className="text-2xl text-purple-400 font-bold mb-2">{playerData.name}</p>
+          )}
+          <p className="text-gray-500 text-sm">
+            {isGuestMode ? `Guest Mode` : `${publicKey?.toBase58().slice(0, 8)}...`}
+          </p>
+        </div>
+
+        <div className="flex flex-col items-center gap-4 w-full max-w-md">
+          <button
+            onClick={() => setScreen("character-select")}
+            className="w-full px-8 py-4 rounded-lg font-bold text-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white transition-all shadow-lg shadow-purple-500/30"
+          >
+            Continue Playing
+          </button>
+
+          <button
+            onClick={() => setScreen("menu")}
+            className="w-full px-8 py-4 rounded-lg font-bold text-lg bg-gray-700 hover:bg-gray-600 text-white transition-all"
+          >
+            Change Nickname
+          </button>
+
+          <button
+            onClick={() => {
+              if (isGuestMode) {
+                exitGuestMode();
+              } else {
+                disconnect();
+              }
+              setScreen("menu");
+            }}
+            className="mt-4 text-gray-500 hover:text-gray-400 transition-colors"
+          >
+            {isGuestMode ? "Exit Guest Mode" : "Switch Account"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Character select screen
   if (screen === "character-select") {
     return (
@@ -177,6 +224,20 @@ export default function Home() {
             {error}
           </div>
         )}
+
+        <button
+          onClick={() => {
+            if (isGuestMode) {
+              exitGuestMode();
+            } else {
+              disconnect();
+            }
+            setScreen("menu");
+          }}
+          className="mt-6 text-gray-500 hover:text-gray-400 transition-colors"
+        >
+          {isGuestMode ? "Exit Guest Mode" : "Switch Account"}
+        </button>
       </div>
     );
   }

@@ -21,6 +21,7 @@ import {
   findWorldPda,
   checkPlayerExists,
   checkSessionDelegated,
+  fetchPlayerData,
 } from "@/solana/client";
 import {
   buildInitPlayerTx,
@@ -556,26 +557,28 @@ export function useGame() {
 
   // Initialize on wallet connect or guest mode
   useEffect(() => {
+    const checkAndLoadPlayer = async (pk: PublicKey) => {
+      const exists = await checkPlayerExists(connection, WORLD_ID, pk);
+      if (exists) {
+        // Load player data to get the name
+        const data = await fetchPlayerData(connection, WORLD_ID, pk);
+        if (data) {
+          setPlayerData({ name: data.name } as any);
+        }
+        setScreen("welcome-back");
+      } else {
+        setScreen("menu");
+      }
+    };
+
     if (isGuestMode && guestServerWallet) {
-      playerExists().then((exists) => {
-        if (exists) {
-          setScreen("character-select");
-        } else {
-          setScreen("menu");
-        }
-      });
+      checkAndLoadPlayer(guestServerWallet);
     } else if (connected && walletPublicKey) {
-      playerExists().then((exists) => {
-        if (exists) {
-          setScreen("character-select");
-        } else {
-          setScreen("menu");
-        }
-      });
+      checkAndLoadPlayer(walletPublicKey);
     } else if (!isGuestMode) {
       setScreen("menu");
     }
-  }, [connected, walletPublicKey, isGuestMode, guestServerWallet, playerExists]);
+  }, [connected, walletPublicKey, isGuestMode, guestServerWallet, connection]);
 
   // Cleanup on unmount
   useEffect(() => {

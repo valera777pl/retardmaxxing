@@ -53,6 +53,50 @@ export async function accountExists(
   return info !== null;
 }
 
+// Fetch player data from blockchain
+export async function fetchPlayerData(
+  connection: Connection,
+  worldId: BN,
+  authority: PublicKey
+): Promise<{ name: string } | null> {
+  const playerSeed = getEntitySeed(authority, "player");
+  const playerEntity = FindEntityPda({
+    worldId,
+    seed: playerSeed,
+  });
+  const playerComponent = FindComponentPda({
+    componentId: PLAYER_COMPONENT_ID,
+    entity: playerEntity,
+  });
+
+  const info = await connection.getAccountInfo(playerComponent);
+  if (!info) return null;
+
+  try {
+    const data = info.data;
+
+    // Try to find the name by looking for string length + printable ASCII
+    // BOLT component structure varies, so we search for valid string pattern
+    for (let offset = 0; offset < Math.min(100, data.length - 4); offset++) {
+      const len = data.readUInt32LE(offset);
+      if (len > 0 && len < 50 && offset + 4 + len <= data.length) {
+        const str = data.slice(offset + 4, offset + 4 + len).toString("utf8");
+        // Check if it's a valid printable string (not binary garbage)
+        if (/^[\x20-\x7E]+$/.test(str) && str.length > 1) {
+          console.log("[FetchPlayer] Found name at offset", offset, ":", str);
+          return { name: str };
+        }
+      }
+    }
+
+    console.log("[FetchPlayer] Could not find valid name in data");
+    return null;
+  } catch (err) {
+    console.error("Failed to parse player data:", err);
+    return null;
+  }
+}
+
 // Check if session account is delegated (owned by Delegation Program)
 export async function checkSessionDelegated(
   connection: Connection,
