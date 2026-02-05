@@ -3,12 +3,16 @@
 import { useEffect, useState } from "react";
 import { LocalGameState } from "@/types";
 import { useCoins } from "@/contexts/CoinsContext";
+import { shareToTwitter } from "@/utils/share";
 import Image from "next/image";
 
 interface Props {
   state: LocalGameState;
   onPlayAgain: () => void;
   onMainMenu: () => void;
+  onShowLeaderboard: () => void;
+  playerRank?: number | null;
+  totalPlayers?: number;
 }
 
 // Stat icon component
@@ -25,10 +29,28 @@ function StatIcon({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-export function ResultsScreen({ state, onPlayAgain, onMainMenu }: Props) {
+export function ResultsScreen({
+  state,
+  onPlayAgain,
+  onMainMenu,
+  onShowLeaderboard,
+  playerRank,
+  totalPlayers,
+}: Props) {
   const { addCoins, totalCoins } = useCoins();
   const [coinsAdded, setCoinsAdded] = useState(false);
   const [showCoinAnim, setShowCoinAnim] = useState(false);
+
+  const handleShare = () => {
+    shareToTwitter({
+      wave: state.wave,
+      timeSurvived: state.timeSurvived,
+      kills: state.kills,
+      gold: state.gold,
+      rank: playerRank ?? undefined,
+      totalPlayers: totalPlayers,
+    });
+  };
 
   // Add earned coins to vault on mount
   useEffect(() => {
@@ -113,6 +135,35 @@ export function ResultsScreen({ state, onPlayAgain, onMainMenu }: Props) {
           <span className="text-[var(--xp-purple)] text-lg">{state.xp}</span>
           <span className="text-[8px] text-[#6a5a4a] ml-2">EXP</span>
         </div>
+
+        {/* Rank display */}
+        {playerRank && totalPlayers && (
+          <>
+            <div className="divider-ornate text-[8px] my-4">
+              <span className="text-[var(--gold-dark)]">GLOBAL RANK</span>
+            </div>
+            <div className="rpg-frame p-4 text-center">
+              <span className="rpg-title text-2xl">#{playerRank}</span>
+              <span className="text-[10px] text-[#6a5a4a] ml-2">of {totalPlayers}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Share and Leaderboard buttons */}
+      <div className="flex gap-4 w-full">
+        <button
+          onClick={handleShare}
+          className="pixel-btn pixel-btn-success flex-1 text-[10px]"
+        >
+          SHARE TO X
+        </button>
+        <button
+          onClick={onShowLeaderboard}
+          className="pixel-btn flex-1 text-[10px]"
+        >
+          LEADERBOARD
+        </button>
       </div>
 
       {/* Vault display */}

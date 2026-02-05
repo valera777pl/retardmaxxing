@@ -106,3 +106,43 @@ export function setPlayerNickname(nickname: string): void {
 export function clearPlayerNickname(): void {
   deleteCookie(NICKNAME_KEY);
 }
+
+// Player display name registry (wallet pubkey -> display name)
+const PLAYER_NAMES_KEY = "player-names";
+
+/**
+ * Get all player display names from localStorage
+ */
+export function getAllPlayerNames(): Record<string, string> {
+  if (typeof localStorage === "undefined") return {};
+
+  try {
+    const stored = localStorage.getItem(PLAYER_NAMES_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Set a player's display name in the registry
+ */
+export function setPlayerDisplayName(pubkey: string, name: string): void {
+  if (typeof localStorage === "undefined") return;
+
+  try {
+    const names = getAllPlayerNames();
+    names[pubkey] = name.slice(0, 20); // Max 20 chars
+    localStorage.setItem(PLAYER_NAMES_KEY, JSON.stringify(names));
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Get a player's display name from the registry
+ */
+export function getPlayerDisplayName(pubkey: string): string | null {
+  const names = getAllPlayerNames();
+  return names[pubkey] || null;
+}

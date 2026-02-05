@@ -501,3 +501,41 @@ canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+
+/* Leaderboard styles */
+.leaderboard-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dungeon-border) var(--dungeon-bg);
+}
+
+.leaderboard-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.leaderboard-scroll::-webkit-scrollbar-track {
+  background: var(--dungeon-bg);
+  border: 1px solid var(--dungeon-border);
+}
+
+.leaderboard-scroll::-webkit-scrollbar-thumb {
+  background: var(--dungeon-border);
+  border: 1px solid var(--dungeon-border-light);
+}
+
+.leaderboard-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--dungeon-border-light);
+}
+
+/* Highlight current player row */
+.leaderboard-highlight {
+  animation: highlight-pulse 2s ease-in-out infinite;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% {
+    background-color: rgba(201, 162, 39, 0.1);
+  }
+  50% {
+    background-color: rgba(201, 162, 39, 0.2);
+  }
+}

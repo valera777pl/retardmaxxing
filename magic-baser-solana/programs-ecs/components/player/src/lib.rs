@@ -27,4 +27,7 @@ pub struct Player {
     pub best_wave: u8,
     /// Timestamp of account creation
     pub created_at: i64,
+    /// Last character ID used (for leaderboard display)
+    #[max_len(20)]
+    pub last_character_id: String,
 }

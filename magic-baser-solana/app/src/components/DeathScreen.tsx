@@ -1,6 +1,7 @@
 "use client";
 
 import { LocalGameState } from "@/types";
+import { shareToTwitter } from "@/utils/share";
 import Image from "next/image";
 
 interface Props {
@@ -10,6 +11,8 @@ interface Props {
   onEndGame: () => void;
   loading: boolean;
   isGuestMode?: boolean;
+  playerRank?: number | null;
+  totalPlayers?: number;
 }
 
 // Stat icon component
@@ -33,7 +36,20 @@ export function DeathScreen({
   onEndGame,
   loading,
   isGuestMode = false,
+  playerRank,
+  totalPlayers,
 }: Props) {
+  const handleShare = () => {
+    shareToTwitter({
+      wave: state.wave,
+      timeSurvived: state.timeSurvived,
+      kills: state.kills,
+      gold: state.gold,
+      rank: playerRank ?? undefined,
+      totalPlayers: totalPlayers,
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
       <div className="screen-enter rpg-frame rpg-frame-corners p-8 max-w-md w-full text-center">
@@ -112,6 +128,14 @@ export function DeathScreen({
               NO REVIVES REMAIN
             </div>
           )}
+
+          <button
+            onClick={handleShare}
+            disabled={loading}
+            className="pixel-btn w-full text-[10px]"
+          >
+            SHARE DEFEAT TO X
+          </button>
 
           <button
             onClick={onEndGame}

@@ -64,6 +64,7 @@ export function useGame() {
     useState<CharacterId>(DEFAULT_CHARACTER);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasCheckedPlayer, setHasCheckedPlayer] = useState(false);
 
   // Transaction counter for kill transactions
   const [txCount, setTxCount] = useState(0);
@@ -533,17 +534,70 @@ export function useGame() {
         console.warn("[EndGame] Undelegate failed (continuing anyway):", undelegateErr);
       }
 
-      // STEP 2: End game (L1) - skip for guest mode (account may still be delegated)
-      if (!isGuestMode && signTransaction) {
-        const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, solanaConnection);
+      // Wait for undelegation to propagate to L1
+      console.log("[EndGame] Waiting for undelegation to propagate to L1...");
+      for (let attempt = 1; attempt <= 15; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const stillDelegated = await checkSessionDelegated(solanaConnection, WORLD_ID, publicKey);
+        console.log(`[EndGame] Poll attempt ${attempt}/15: delegated=${stillDelegated}`);
+        if (!stillDelegated) {
+          console.log("[EndGame] Undelegation propagated to L1!");
+          break;
+        }
+        if (attempt === 15) {
+          console.warn("[EndGame] Undelegation did not propagate within 15 seconds, proceeding anyway");
+        }
+      }
+
+      // STEP 2: End game (L1) - updates Player stats from GameSession
+      console.log("[EndGame] Calling end_game system...");
+      const tx = await buildEndGameTx(worldPda, WORLD_ID, publicKey, solanaConnection);
+
+      if (isGuestMode) {
+        await signAndSendViaAPI(tx, false);
+        console.log("[EndGame] End game confirmed (guest mode)");
+      } else if (signTransaction) {
         tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
         tx.feePayer = publicKey;
         const signed = await signTransaction(tx);
         const sig = await connection.sendRawTransaction(signed.serialize());
         await connection.confirmTransaction(sig, "confirmed");
         console.log("[EndGame] End game confirmed:", sig);
-      } else {
-        console.log("[EndGame] Skipping end_game for guest mode");
+      }
+
+      // STEP 3: Submit score to Supabase leaderboard (off-chain)
+      console.log("[EndGame] Submitting score to leaderboard (Supabase)...");
+
+      // Calculate updated stats
+      const currentWave = localState.wave;
+      const currentTime = localState.timeSurvived;
+      const currentGold = localState.gold;
+      const submitData = {
+        walletAddress: publicKey.toBase58(),
+        name: playerName || guestNickname || "Anonymous",
+        bestWave: Math.max(playerData?.bestWave || 0, currentWave),
+        bestTime: Math.max(playerData?.bestTime || 0, currentTime),
+        totalGold: Number((playerData?.totalGold || BigInt(0)) + BigInt(currentGold)),
+        gamesPlayed: (playerData?.gamesPlayed || 0) + 1,
+        characterId: selectedCharacter,
+      };
+      console.log("[EndGame] Submit data:", submitData);
+
+      try {
+        const response = await fetch('/api/leaderboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(submitData),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.warn("[EndGame] Leaderboard submit failed:", errorData.error);
+        } else {
+          console.log("[EndGame] Score submitted to leaderboard successfully");
+        }
+      } catch (submitErr) {
+        console.warn("[EndGame] Leaderboard submit error (non-fatal):", submitErr);
       }
 
       setScreen("results");
@@ -555,7 +609,7 @@ export function useGame() {
     } finally {
       setLoading(false);
     }
-  }, [publicKey, signTransaction, worldPda, connection, stopSyncLoop, isGuestMode, signAndSendViaAPI]);
+  }, [publicKey, signTransaction, worldPda, connection, stopSyncLoop, isGuestMode, signAndSendViaAPI, localState, playerName, guestNickname, playerData, selectedCharacter]);
 
   // Handle player death
   const onPlayerDeath = useCallback(() => {
@@ -583,16 +637,20 @@ export function useGame() {
   // Initialize on wallet connect or guest mode
   useEffect(() => {
     const checkAndLoadPlayer = async (pk: PublicKey) => {
-      const exists = await checkPlayerExists(connection, WORLD_ID, pk);
-      if (exists) {
-        // Load name from localStorage
-        const storedName = getStoredName(pk.toBase58());
-        if (storedName) {
-          setPlayerName(storedName);
+      try {
+        const exists = await checkPlayerExists(connection, WORLD_ID, pk);
+        if (exists) {
+          // Load name from localStorage
+          const storedName = getStoredName(pk.toBase58());
+          if (storedName) {
+            setPlayerName(storedName);
+          }
+          setScreen("welcome-back");
+        } else {
+          setScreen("menu");
         }
-        setScreen("welcome-back");
-      } else {
-        setScreen("menu");
+      } finally {
+        setHasCheckedPlayer(true);
       }
     };
 
@@ -602,6 +660,7 @@ export function useGame() {
       checkAndLoadPlayer(walletPublicKey);
     } else if (!isGuestMode) {
       setScreen("menu");
+      setHasCheckedPlayer(true);
     }
   }, [connected, walletPublicKey, isGuestMode, guestServerWallet, connection, getStoredName]);
 
@@ -627,6 +686,7 @@ export function useGame() {
     isGuestMode,
     guestNickname,
     playerName,
+    hasCheckedPlayer,
 
     // Actions
     initializePlayer,

@@ -40,6 +40,7 @@ export interface LeaderboardEntryData {
   totalGold: bigint;
   gamesPlayed: number;
   updatedAt: bigint;
+  characterId: string;
 }
 
 // Local game state (updated every frame)
@@ -81,8 +82,11 @@ export interface CharacterOption {
 export interface LeaderboardDisplay {
   rank: number;
   name: string;
+  walletAddress: string;  // For identification
   bestTime: number;
   bestWave: number;
   totalGold: number;
+  gamesPlayed: number;
   isCurrentPlayer: boolean;
+  characterId: string;  // For avatar display
 }

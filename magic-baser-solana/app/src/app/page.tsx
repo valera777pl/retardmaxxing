@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useGame } from "@/hooks/useGame";
+import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { useGuest } from "@/contexts/GuestContext";
 import { useCoins } from "@/contexts/CoinsContext";
 import { GameCanvas } from "@/components/GameCanvas";
@@ -11,6 +12,7 @@ import { DeathScreen } from "@/components/DeathScreen";
 import { ResultsScreen } from "@/components/ResultsScreen";
 import { GameHUD } from "@/components/GameHUD";
 import { LoginChoice } from "@/components/LoginChoice";
+import { Leaderboard } from "@/components/Leaderboard";
 
 export default function Home() {
   const { publicKey, disconnect } = useWallet();
@@ -30,6 +32,8 @@ export default function Home() {
     txCount,
     guestNickname,
     playerName,
+    publicKey: gamePublicKey,
+    hasCheckedPlayer,
     initializePlayer,
     startGame,
     useRevive,
@@ -39,8 +43,21 @@ export default function Home() {
     syncKillToER,
   } = useGame();
 
-  // Loading screen
-  if (screen === "loading") {
+  // For guest mode, use guestNickname; for wallet mode, use playerName
+  const effectivePlayerName = isGuestMode ? (guestNickname || nickname) : playerName;
+
+  // Leaderboard hook - pass playerName for name registry
+  const {
+    entries: leaderboardEntries,
+    playerRank,
+    totalPlayers,
+    loading: leaderboardLoading,
+    error: leaderboardError,
+    refetch: refetchLeaderboard,
+  } = useLeaderboard(gamePublicKey ?? undefined, effectivePlayerName || undefined);
+
+  // Loading screen - also show loading when connected but player check is pending
+  if (screen === "loading" || (connected && !hasCheckedPlayer)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[var(--dungeon-bg)]">
         <div className="text-center">
@@ -185,8 +202,15 @@ export default function Home() {
             </button>
 
             <button
-              onClick={() => setScreen("menu")}
+              onClick={() => setScreen("leaderboard")}
               className="pixel-btn w-full"
+            >
+              HALL OF CHAMPIONS
+            </button>
+
+            <button
+              onClick={() => setScreen("menu")}
+              className="pixel-btn w-full text-[10px]"
             >
               CHANGE NAME
             </button>
@@ -206,6 +230,21 @@ export default function Home() {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Leaderboard screen
+  if (screen === "leaderboard") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--dungeon-bg)]">
+        <Leaderboard
+          entries={leaderboardEntries}
+          loading={leaderboardLoading}
+          error={leaderboardError}
+          onClose={() => setScreen("welcome-back")}
+          onRefresh={refetchLeaderboard}
+        />
       </div>
     );
   }
@@ -323,6 +362,8 @@ export default function Home() {
           onEndGame={endGame}
           loading={loading}
           isGuestMode={isGuestMode}
+          playerRank={playerRank}
+          totalPlayers={totalPlayers}
         />
       </div>
     );
@@ -335,7 +376,10 @@ export default function Home() {
         <ResultsScreen
           state={localState}
           onPlayAgain={() => setScreen("character-select")}
-          onMainMenu={() => setScreen("menu")}
+          onMainMenu={() => setScreen("welcome-back")}
+          onShowLeaderboard={() => setScreen("leaderboard")}
+          playerRank={playerRank}
+          totalPlayers={totalPlayers}
         />
       </div>
     );

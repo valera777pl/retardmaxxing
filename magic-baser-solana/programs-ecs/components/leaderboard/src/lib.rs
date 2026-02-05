@@ -22,4 +22,7 @@ pub struct LeaderboardEntry {
     pub games_played: u32,
     /// Last update timestamp
     pub updated_at: i64,
+    /// Character ID used (for avatar display in leaderboard)
+    #[max_len(20)]
+    pub character_id: String,
 }
