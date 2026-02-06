@@ -10,7 +10,7 @@ export interface ShareStats {
 }
 
 // Game URL - update this when deployed
-const GAME_URL = "https://magicbaser.com";
+const GAME_URL = "https://magic-baser.vercel.app";
 
 // Format time as M:SS
 function formatTime(seconds: number): string {
@@ -27,22 +27,16 @@ function formatNumber(n: number): string {
 // Generate tweet text with game stats
 export function generateTweetText(stats: ShareStats): string {
   const lines = [
-    `I survived ${stats.wave} waves in Magic Baser!`,
-    "",
-    `Wave: ${stats.wave}`,
-    `Time: ${formatTime(stats.timeSurvived)}`,
-    `Kills: ${formatNumber(stats.kills)}`,
-    `Gold: ${formatNumber(stats.gold)}`,
+    `⚔️ I just played Magic Baser on @MagicBlock — survived ${stats.wave} waves, slayed ${formatNumber(stats.kills)} enemies and earned ${formatNumber(stats.gold)} gold in ${formatTime(stats.timeSurvived)}!`,
   ];
 
   if (stats.rank && stats.totalPlayers) {
     lines.push("");
-    lines.push(`Rank: #${stats.rank} of ${stats.totalPlayers}`);
+    lines.push(`🏆 Rank #${stats.rank} of ${stats.totalPlayers}`);
   }
 
   lines.push("");
-  lines.push("Can you beat my score?");
-  lines.push("");
+  lines.push("Think you can beat me? 👇");
   lines.push(GAME_URL);
   lines.push("");
   lines.push("#MagicBaser #Solana #Web3Gaming");

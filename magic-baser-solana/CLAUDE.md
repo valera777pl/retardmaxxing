@@ -78,6 +78,22 @@ solana airdrop 10 <WALLET_ADDRESS>  # Fund test wallet
 2. Every 200ms, `updateLocalState` syncs to ER via `buildUpdateStatsTx`
 3. L1 transactions for: init player, start game, end game, revive
 4. ER transactions for: update stats (gasless)
+5. Leaderboard: off-chain via Supabase API (see below)
+
+### Off-chain Leaderboard (Supabase)
+Due to Solana heap memory limitations (~32KB), leaderboard is stored in Supabase PostgreSQL.
+
+- `app/src/app/api/leaderboard/route.ts` - API endpoints (GET top-10, POST upsert)
+- `app/src/lib/supabase.ts` - Server-side Supabase client
+- `app/src/hooks/useLeaderboard.ts` - React hook for fetching leaderboard
+
+Flow: Player dies → POST /api/leaderboard → Supabase → GET returns top-10
+
+Required env vars in `.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_KEY=eyJ...
+```
 
 ### Entity Seeds
 All PDAs derived from: `${walletAddress.slice(0, 20)}-{suffix}`
