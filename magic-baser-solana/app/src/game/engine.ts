@@ -216,6 +216,9 @@ export class GameEngine {
 
   private setupInputHandlers() {
     window.addEventListener("keydown", (e) => {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)) {
+        e.preventDefault();
+      }
       this.state.keys.add(e.key.toLowerCase());
 
       if (this.state.showLevelUp && ['1', '2', '3'].includes(e.key)) {

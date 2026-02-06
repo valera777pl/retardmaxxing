@@ -70,7 +70,7 @@ export function GameCanvas({ onStateUpdate, isPlaying, onKill, characterId = 'ig
       width={800}
       height={600}
       className="rpg-frame"
-      style={{ imageRendering: 'pixelated' }}
+      style={{ imageRendering: 'pixelated', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
     />
   );
 }

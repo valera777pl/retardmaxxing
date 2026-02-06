@@ -302,7 +302,7 @@ export default function Home() {
   // Playing screen
   if (screen === "playing") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[var(--dungeon-bg)]">
+      <div className="h-screen flex flex-col items-center justify-center p-4 bg-[var(--dungeon-bg)] overflow-hidden">
         {/* Guest mode indicator */}
         {isGuestMode && (
           <div className="absolute top-4 right-4 rpg-frame p-2">
@@ -316,7 +316,7 @@ export default function Home() {
           onResume={() => updateLocalState({ isPaused: false })}
         />
 
-        <div className="rpg-frame p-1">
+        <div className="rpg-frame p-1 flex-shrink overflow-hidden">
           <GameCanvas
             onStateUpdate={updateLocalState}
             isPlaying={!localState.isPaused && !localState.isDead}
@@ -326,7 +326,7 @@ export default function Home() {
         </div>
 
         {/* Game controls */}
-        <div className="mt-4 flex gap-4">
+        <div className="mt-4 flex gap-4 flex-shrink-0">
           <button
             onClick={() => updateLocalState({ isPaused: !localState.isPaused })}
             className="pixel-btn text-[10px]"
