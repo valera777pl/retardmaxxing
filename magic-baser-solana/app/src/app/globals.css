@@ -46,6 +46,7 @@ html, body {
   -moz-osx-font-smoothing: unset;
   overflow: hidden;
   height: 100%;
+  zoom: 0.75;
 }
 
 /* RPG Frame - double border dungeon style */
