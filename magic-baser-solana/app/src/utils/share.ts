@@ -10,7 +10,7 @@ export interface ShareStats {
 }
 
 // Game URL - update this when deployed
-const GAME_URL = "https://magic-baser.vercel.app";
+const GAME_URL = "https://magic-baser-game.vercel.app";
 
 // Format time as M:SS
 function formatTime(seconds: number): string {
